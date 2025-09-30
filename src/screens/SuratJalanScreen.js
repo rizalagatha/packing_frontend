@@ -1,4 +1,4 @@
-import React, {useState, useContext, useCallback} from 'react';
+import React, {useState, useContext} from 'react';
 import {
   View,
   Text,
@@ -46,7 +46,9 @@ const SuratJalanScreen = ({navigation}) => {
       });
       return;
     }
-    if (!scannedPackNomor || isScanning) return;
+    if (!scannedPackNomor || isScanning) {
+      return;
+    }
 
     if (scannedPacks.has(scannedPackNomor)) {
       Toast.show({
