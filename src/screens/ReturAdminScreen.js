@@ -1,4 +1,4 @@
-import React, {useState, useContext} from 'react';
+import React, {useState, useContext, useCallback, useEffect} from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import {AuthContext} from '../context/AuthContext';
 import {
-  searchPenerimaanSjApi,
+  searchPendingReturApi,
   loadSelisihDataApi,
   saveReturApi,
 } from '../api/ApiService';
@@ -21,27 +21,50 @@ import SearchModal from '../components/SearchModal';
 import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
 
-const ReturAdminScreen = ({navigation}) => {
-  const {userInfo, userToken} = useContext(AuthContext);
+const ReturAdminScreen = ({navigation, route}) => {
+  const {userToken} = useContext(AuthContext);
   const [penerimaan, setPenerimaan] = useState(null);
+  const [headerSj, setHeaderSj] = useState(null);
   const [items, setItems] = useState([]);
   const [keterangan, setKeterangan] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSelectPenerimaan = async selected => {
-    try {
-      setPenerimaan(selected);
-      const response = await loadSelisihDataApi(selected.nomor, userToken);
-      setItems(response.data.data);
-    } catch (error) {
-      Toast.show({
-        type: 'error',
-        text1: 'Gagal Memuat',
-        text2: 'Gagal memuat data selisih barang.',
-      });
+  const handleSelectPenerimaan = useCallback(
+    async selected => {
+      setIsLoading(true);
+      try {
+        setPenerimaan(selected);
+        const response = await loadSelisihDataApi(selected.nomor, userToken);
+
+        setHeaderSj(response.data.data.headerSj);
+        setItems(response.data.data.items);
+
+        // -> TAMBAHKAN BARIS INI
+        setKeterangan('RETUR ADMIN');
+      } catch (error) {
+        Toast.show({
+          type: 'error',
+          text1: 'Gagal Memuat',
+          text2: 'Gagal memuat data selisih.',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [userToken],
+  );
+
+  const pending_nomor_param = route.params?.pending_nomor;
+
+  useEffect(() => {
+    if (pending_nomor_param) {
+      // Gunakan variabel yang sudah diekstrak
+      handleSelectPenerimaan({nomor: pending_nomor_param});
     }
-  };
+    // Gunakan variabel sederhana di dependency array
+  }, [pending_nomor_param, handleSelectPenerimaan]);
 
   const handleSave = async () => {
     if (!penerimaan || items.length === 0) {
@@ -74,8 +97,9 @@ const ReturAdminScreen = ({navigation}) => {
               const payload = {
                 header: {
                   tanggalRetur: new Date().toISOString().split('T')[0],
-                  gudangTujuan: penerimaan.no_sj.substring(0, 3), // Ambil kode DC dari No. SJ
-                  nomorPenerimaan: penerimaan.nomor,
+                  gudangTujuan: headerSj.gudang_asal_kode,
+                  nomorPending: penerimaan.nomor, // -> Ini nomor PENDING (PD...)
+                  nomorPenerimaan: penerimaan.tj_nomor, // -> Ini nomor PENERIMAAN (TJ...)
                   keterangan: keterangan,
                 },
                 items: items,
@@ -107,12 +131,8 @@ const ReturAdminScreen = ({navigation}) => {
   const renderItem = ({item}) => (
     <View style={styles.itemContainer}>
       <View style={styles.itemInfo}>
-        <Text style={styles.itemName} numberOfLines={2}>
-          {item.nama}
-        </Text>
-        <Text style={styles.itemDetails}>
-          Size: {item.ukuran} | Barcode: {item.barcode}
-        </Text>
+        <Text style={styles.itemName}>{item.nama}</Text>
+        <Text style={styles.itemDetails}>Size: {item.ukuran}</Text>
       </View>
       <View style={styles.qtyContainer}>
         <Text style={styles.qtyLabel}>
@@ -131,22 +151,16 @@ const ReturAdminScreen = ({navigation}) => {
         visible={isModalVisible}
         onClose={() => setIsModalVisible(false)}
         onSelect={handleSelectPenerimaan}
-        title="Cari Penerimaan SJ"
-        apiSearchFunction={params => searchPenerimaanSjApi(params, userToken)}
+        title="Cari Penerimaan Pending"
+        apiSearchFunction={params =>
+          searchPendingReturApi({...params, status: 'CLOSE'}, userToken)
+        }
         keyField="nomor"
         renderListItem={item => (
-          <View style={styles.listItemContainer}>
-            <View>
-              <Text style={styles.itemKode}>{item.nomor}</Text>
-              <Text style={styles.itemNama}>
-                No. SJ: {item.no_sj} - Tgl:{' '}
-                {new Date(item.tanggal).toLocaleDateString('id-ID')}
-              </Text>
-            </View>
-            {/* -> TAMPILKAN BADGE STATUS */}
-            <View style={styles.statusBadge}>
-              <Text style={styles.statusText}>{item.status}</Text>
-            </View>
+          <View>
+            <Text style={styles.itemKode}>{item.nomor}</Text>
+            <Text style={styles.itemNama}>No. SJ: {item.sj_nomor}</Text>
+            <Text style={styles.itemNama}>No. Terima: {item.tj_nomor}</Text>
           </View>
         )}
       />
@@ -165,34 +179,50 @@ const ReturAdminScreen = ({navigation}) => {
               styles.lookupText,
               penerimaan && styles.lookupTextSelected,
             ]}>
-            {penerimaan ? penerimaan.nomor : 'Pilih No. Penerimaan SJ...'}
+            {penerimaan ? penerimaan.nomor : 'Pilih No. Penerimaan Pending...'}
           </Text>
           <Icon name="chevron-down" size={20} color="#757575" />
         </TouchableOpacity>
+        {penerimaan && (
+          <View style={styles.headerDetailsContainer}>
+            <Text style={styles.headerDetails}>
+              No. Terima: {penerimaan.tj_nomor}
+            </Text>
+            <Text style={styles.headerDetails}>
+              No. SJ: {penerimaan.sj_nomor}
+            </Text>
+            {headerSj && (
+              <Text style={styles.headerDetails}>
+                Dari: {headerSj.gudang_asal_nama}
+              </Text>
+            )}
+          </View>
+        )}
         <TextInput
           style={styles.input}
           placeholder="Keterangan (opsional)..."
           value={keterangan}
           onChangeText={setKeterangan}
-          placeholderTextColor="#BDBDBD"
         />
       </View>
 
-      <FlatList
-        data={items}
-        renderItem={renderItem}
-        keyExtractor={item => `${item.kode}-${item.ukuran}`}
-        ListHeaderComponent={
-          <Text selectable={true} style={styles.listTitle}>
-            Barang yang Diretur (Selisih)
-          </Text>
-        }
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>
-            Pilih No. Penerimaan untuk memuat data selisih.
-          </Text>
-        }
-      />
+      {isLoading ? (
+        <ActivityIndicator style={{marginTop: 20}} />
+      ) : (
+        <FlatList
+          data={items}
+          renderItem={renderItem}
+          keyExtractor={item => `${item.kode}-${item.ukuran}`}
+          ListHeaderComponent={
+            <Text style={styles.listTitle}>Barang yang Diretur (Selisih)</Text>
+          }
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>
+              Pilih No. Penerimaan untuk memuat data selisih.
+            </Text>
+          }
+        />
+      )}
 
       <View style={styles.footerContainer}>
         <TouchableOpacity
@@ -296,6 +326,16 @@ const styles = StyleSheet.create({
   // Style untuk item di SearchModal (opsional, jika belum ada)
   itemKode: {fontWeight: 'bold', color: '#212121'},
   itemNama: {color: '#757575'},
+  headerDetailsContainer: {
+    marginBottom: 10,
+    padding: 10,
+    backgroundColor: '#f0f2f5',
+    borderRadius: 6,
+  },
+  headerDetails: {
+    color: '#666',
+    fontSize: 12,
+  },
 });
 
 export default ReturAdminScreen;

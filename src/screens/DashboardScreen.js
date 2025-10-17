@@ -38,22 +38,60 @@ const DashboardScreen = ({navigation}) => {
       allowed: userInfo?.cabang === 'P04',
     },
     {
+      // -> Tambahkan Menu Baru di sini
+      title: 'Checker',
+      iconName: 'check-square',
+      onPress: () => navigation.navigate('Checker'),
+      allowed:
+        userInfo?.cabang === 'P04' ||
+        userInfo?.cabang === 'KDC' ||
+        userInfo?.cabang === 'KBS',
+    },
+    {
       title: 'Surat Jalan',
       iconName: 'truck',
       onPress: () => navigation.navigate('SuratJalan'),
-      allowed: userInfo?.cabang === 'KDC',
+      allowed: userInfo?.cabang === 'KDC' || userInfo?.cabang === 'KBS',
+    },
+    {
+      title: 'Riwayat SJ', // -> Menu Baru
+      iconName: 'archive',
+      onPress: () => navigation.navigate('RiwayatSuratJalan'),
+      allowed: userInfo?.cabang === 'KDC' || userInfo?.cabang === 'KBS',
     },
     {
       title: 'Terima SJ',
       iconName: 'inbox',
       onPress: () => navigation.navigate('TerimaSj'),
-      allowed: userInfo?.cabang.startsWith('K') && userInfo?.cabang !== 'KDC',
+      allowed:
+        userInfo?.cabang.startsWith('K') &&
+        userInfo?.cabang !== 'KDC' &&
+        userInfo?.cabang !== 'KBS',
     },
     {
       title: 'Retur Admin',
       iconName: 'rotate-ccw',
       onPress: () => navigation.navigate('ReturAdmin'),
-      allowed: userInfo?.cabang.startsWith('K') && userInfo?.cabang !== 'KDC',
+      allowed:
+        userInfo?.cabang.startsWith('K') &&
+        userInfo?.cabang !== 'KDC' &&
+        userInfo?.cabang !== 'KBS',
+    },
+    {
+      // -> Menu Baru
+      title: 'Laporan Pending',
+      iconName: 'alert-triangle',
+      onPress: () => navigation.navigate('LaporanPending'),
+      allowed:
+        userInfo?.cabang.startsWith('K') &&
+        userInfo?.cabang !== 'KDC' &&
+        userInfo?.cabang !== 'KBS',
+    },
+    {
+      title: 'Tautkan WhatsApp',
+      iconName: 'smartphone',
+      onPress: () => navigation.navigate('LinkWhatsapp'),
+      allowed: userInfo?.cabang.startsWith('K'),
     },
   ];
 

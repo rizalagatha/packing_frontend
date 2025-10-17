@@ -74,12 +74,12 @@ const PackingHistoryScreen = ({navigation}) => {
         <View>
           <Text style={styles.historyNomor}>{item.pack_nomor}</Text>
           <Text style={styles.historyTanggal}>
-            {new Date(item.pack_tanggal).toLocaleDateString('id-ID')} -{' '}
-            {item.pack_keterangan || 'Tanpa Keterangan'}
+            {new Date(item.pack_tanggal).toLocaleDateString('id-ID')}
           </Text>
+          <Text style={styles.historySpk}>SPK: {item.pack_spk_nomor}</Text>
         </View>
         <View style={{flexDirection: 'row', alignItems: 'center'}}>
-          <Text style={styles.historyJumlah}>{item.jumlah_item} item</Text>
+          <Text style={styles.historyJumlah}>{item.total_qty || 0} Pcs</Text>
           <Icon
             name={
               expandedNomor === item.pack_nomor ? 'chevron-up' : 'chevron-down'
@@ -159,6 +159,12 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginRight: 10,
   },
+  historySpk: {
+    color: '#888',
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -181,7 +187,7 @@ const styles = StyleSheet.create({
   },
   detailName: {
     color: '#333',
-    fontSize: 14,
+    fontSize: 12,
   },
   detailQty: {
     color: '#333',

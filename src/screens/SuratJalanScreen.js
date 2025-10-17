@@ -1,4 +1,10 @@
-import React, {useState, useContext} from 'react';
+import React, {
+  useState,
+  useContext,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+} from 'react';
 import {
   View,
   Text,
@@ -18,13 +24,17 @@ import {
   getItemsFromPackingApi,
   saveSuratJalanApi,
   searchStoresApi,
+  validateBarcodeApi,
 } from '../api/ApiService';
 import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
 import SearchModal from '../components/SearchModal';
+import SoundPlayer from 'react-native-sound-player';
 
 const SuratJalanScreen = ({navigation}) => {
   const {userInfo, userToken} = useContext(AuthContext);
+
+  const scannerInputRef = useRef(null);
 
   // State untuk data form
   const [store, setStore] = useState(null); // Akan berisi { kode: 'K01', nama: 'STORE 01' }
@@ -32,60 +42,182 @@ const SuratJalanScreen = ({navigation}) => {
   const [scannedPackNomor, setScannedPackNomor] = useState('');
   const [items, setItems] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [scannedValue, setScannedValue] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  const [scanMode, setScanMode] = useState('packing');
   const [scannedPacks, setScannedPacks] = useState(new Set()); // Untuk mencegah scan packing ganda
   const [isStoreModalVisible, setStoreModalVisible] = useState(false);
 
+  const playSound = type => {
+    try {
+      const soundName = type === 'success' ? 'beep_success' : 'beep_error';
+      SoundPlayer.playSoundFile(soundName, 'mp3');
+    } catch (e) {
+      console.log(`Tidak bisa memutar suara`, e);
+    }
+  };
+
+  const handleReset = useCallback(() => {
+    Alert.alert(
+      'Kosongkan Form?',
+      'Anda yakin ingin menghapus semua data di halaman ini?',
+      [
+        {text: 'Batal', style: 'cancel'},
+        {
+          text: 'Ya, Kosongkan',
+          onPress: () => {
+            setItems([]);
+            setStore(null);
+            setKeterangan('');
+            setScannedPacks(new Set());
+            setScannedValue('');
+          },
+          style: 'destructive',
+        },
+      ],
+    );
+  }, []);
+
+  // --- Menambahkan Tombol Reset di Header ---
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={handleReset} style={{marginRight: 15}}>
+          <Icon name="rotate-ccw" size={24} color="#D32F2F" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, handleReset]);
+
+  const handleChangeMode = newMode => {
+    if (scanMode === newMode) return; // Tidak melakukan apa-apa jika modenya sama
+
+    if (items.length > 0) {
+      Alert.alert(
+        'Ganti Mode Scan?',
+        'Mengganti mode akan mengosongkan daftar item yang sudah ada. Lanjutkan?',
+        [
+          {text: 'Batal', style: 'cancel'},
+          {
+            text: 'Ya, Lanjutkan',
+            onPress: () => {
+              setItems([]);
+              setScannedPacks(new Set());
+              setScanMode(newMode);
+            },
+          },
+        ],
+      );
+    } else {
+      // Jika daftar kosong, langsung ganti mode
+      setScanMode(newMode);
+    }
+  };
+
+  const handleScanSubmit = () => {
+    if (scanMode === 'packing') {
+      handleScanPackNomor();
+    } else {
+      handleScanIndividualItem();
+    }
+  };
+
   // Fungsi untuk menangani scan barcode packing
   const handleScanPackNomor = async () => {
-    if (!store) {
-      Toast.show({
-        type: 'error',
-        text1: 'Pilih Store Tujuan',
-        text2: 'Anda harus memilih store tujuan terlebih dahulu.',
-      });
-      return;
-    }
-    if (!scannedPackNomor || isScanning) {
-      return;
-    }
+    if (!store || !scannedValue || isScanning) return;
 
-    if (scannedPacks.has(scannedPackNomor)) {
+    if (scannedPacks.has(scannedValue)) {
       Toast.show({
         type: 'info',
         text1: 'Info',
-        text2: `Packing ${scannedPackNomor} sudah di-scan.`,
+        text2: `Packing ${scannedValue} sudah di-scan.`,
       });
-      setScannedPackNomor('');
+      setScannedValue('');
       return;
     }
 
     setIsScanning(true);
     try {
-      const response = await getItemsFromPackingApi(
-        scannedPackNomor,
-        userToken,
-      );
-      const newItems = response.data.data.map(item => ({
-        ...item,
-        qty: item.qty,
-      })); // Sesuaikan nama field jika perlu
+      const response = await getItemsFromPackingApi(scannedValue, userToken);
+      const newItemsFromPack = response.data.data;
 
-      setItems(prevItems => [...prevItems, ...newItems]);
-      setScannedPacks(prev => new Set(prev).add(scannedPackNomor));
+      // Logika penggabungan item yang disempurnakan
+      setItems(prevItems => {
+        const itemsMap = new Map(prevItems.map(item => [item.barcode, item]));
+        newItemsFromPack.forEach(newItem => {
+          if (itemsMap.has(newItem.barcode)) {
+            // Jika item sudah ada, tambahkan kuantitasnya
+            const existingItem = itemsMap.get(newItem.barcode);
+            existingItem.qty += newItem.qty;
+          } else {
+            // Jika item baru, tambahkan ke map
+            itemsMap.set(newItem.barcode, newItem);
+          }
+        });
+        return Array.from(itemsMap.values());
+      });
+
+      setScannedPacks(prev => new Set(prev).add(scannedValue));
       Toast.show({
         type: 'success',
         text1: 'Sukses',
-        text2: `${newItems.length} item dari ${scannedPackNomor} ditambahkan!`,
+        text2: `${newItemsFromPack.length} jenis item dari ${scannedValue} ditambahkan!`,
       });
+      playSound('success');
     } catch (error) {
       const message =
         error.response?.data?.message || 'Gagal memuat data packing.';
       Toast.show({type: 'error', text1: 'Error Scan', text2: message});
+      playSound('error');
     } finally {
       setIsScanning(false);
-      setScannedPackNomor('');
+      setScannedValue('');
+      setTimeout(() => scannerInputRef.current?.focus(), 100);
     }
+  };
+
+  const handleScanIndividualItem = async () => {
+    if (!store || !scannedValue || isScanning) return;
+
+    setIsScanning(true);
+    const barcode = scannedValue;
+
+    // Langkah 1: Cek apakah item sudah ada di daftar
+    const existingItemIndex = items.findIndex(item => item.barcode === barcode);
+
+    if (existingItemIndex > -1) {
+      // --- JIKA ITEM SUDAH ADA ---
+      const newItems = [...items];
+      newItems[existingItemIndex].qty += 1;
+      setItems(newItems);
+      playSound('success'); // -> SUARA SUKSES
+    } else {
+      // --- JIKA ITEM BARU ---
+      try {
+        const gudang = userInfo.cabang;
+        const response = await validateBarcodeApi(barcode, gudang, userToken);
+        const product = response.data.data;
+        const newItem = {
+          barcode: product.barcode,
+          kode: product.kode,
+          nama: product.nama,
+          ukuran: product.ukuran,
+          stok: product.stok,
+          qty: 1,
+        };
+        setItems(prevItems => [newItem, ...prevItems]);
+        playSound('success'); // -> SUARA SUKSES
+      } catch (error) {
+        const message = error.response?.data?.message || 'Barcode tidak valid.';
+        Toast.show({type: 'error', text1: 'Error Barcode', text2: message});
+        playSound('error'); // -> SUARA GAGAL
+      }
+    }
+
+    // Langkah terakhir: Selalu bersihkan dan kembalikan fokus
+    setIsScanning(false);
+    setScannedValue('');
+    setTimeout(() => scannerInputRef.current?.focus(), 100);
   };
 
   const handleSave = async () => {
@@ -162,9 +294,7 @@ const SuratJalanScreen = ({navigation}) => {
   const renderItem = ({item}) => (
     <View style={styles.itemContainer}>
       <View style={styles.itemInfo}>
-        <Text style={styles.itemName} numberOfLines={2}>
-          {item.nama}
-        </Text>
+        <Text style={styles.itemName}>{item.nama}</Text>
         <Text style={styles.itemDetails}>
           Kode: {item.kode} | Size: {item.ukuran}
         </Text>
@@ -225,25 +355,61 @@ const SuratJalanScreen = ({navigation}) => {
           keyExtractor={(item, index) => `${item.kode}-${index}`}
           style={styles.list}
           ListHeaderComponent={
-            <View style={styles.scanContainer}>
+            <View style={styles.scanSection}>
+              <View style={styles.modeSelectorContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.modeButton,
+                    scanMode === 'packing' && styles.modeButtonActive,
+                  ]}
+                  onPress={() => handleChangeMode('packing')}>
+                  <Text
+                    style={[
+                      styles.modeButtonText,
+                      scanMode === 'packing' && styles.modeButtonTextActive,
+                    ]}>
+                    Scan Packing
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.modeButton,
+                    scanMode === 'item' && styles.modeButtonActive,
+                  ]}
+                  onPress={() => handleChangeMode('item')}>
+                  <Text
+                    style={[
+                      styles.modeButtonText,
+                      scanMode === 'item' && styles.modeButtonTextActive,
+                    ]}>
+                    Scan Barang
+                  </Text>
+                </TouchableOpacity>
+              </View>
               <View style={styles.inputWrapper}>
                 <Icon
-                  name="package"
+                  name={scanMode === 'packing' ? 'package' : 'cpu'}
                   size={20}
                   color="#A0AEC0"
                   style={styles.inputIcon}
                 />
                 <TextInput
+                  ref={scannerInputRef}
                   style={styles.scanInput}
-                  placeholder="Scan Barcode Packing..."
-                  value={scannedPackNomor}
-                  onChangeText={setScannedPackNomor}
-                  onSubmitEditing={handleScanPackNomor}
+                  placeholder={
+                    scanMode === 'packing'
+                      ? 'Scan Barcode Packing...'
+                      : 'Scan Barcode Barang...'
+                  }
+                  value={scannedValue}
+                  onChangeText={setScannedValue}
+                  onSubmitEditing={handleScanSubmit}
                   editable={!isScanning}
                   placeholderTextColor="#A0AEC0"
                 />
                 {isScanning && <ActivityIndicator style={{marginLeft: 10}} />}
               </View>
+              <Text style={styles.listTitle}>Item yang Akan Dikirim</Text>
             </View>
           }
           ListEmptyComponent={
@@ -307,15 +473,40 @@ const styles = StyleSheet.create({
     borderColor: '#E0E0E0',
     color: '#212121',
   },
-  scanContainer: {
+  scanSection: {
+    // -> Style baru untuk membungkus semua bagian scan
     paddingHorizontal: 16,
     paddingTop: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: 10,
   },
+  modeSelectorContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#E0E0E0',
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  modeButton: {
+    flex: 1,
+    padding: 10,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  modeButtonActive: {
+    backgroundColor: '#FFFFFF',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  modeButtonText: {
+    fontWeight: '600',
+    color: '#616161',
+  },
+  modeButtonTextActive: {
+    color: '#D32F2F',
+  },
   inputWrapper: {
-    // -> Style baru untuk membungkus input scan
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',

@@ -48,7 +48,7 @@ const LoginScreen = () => {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <Image source={require('../assets/logo.png')} style={styles.logo} />
       <Text style={styles.title}>Selamat Datang</Text>
-      <Text style={styles.subtitle}>Masuk untuk memulai sesi packing</Text>
+      <Text style={styles.subtitle}>Masuk untuk mulai bekerja</Text>
 
       <View style={styles.inputWrapper}>
         <TextInput
