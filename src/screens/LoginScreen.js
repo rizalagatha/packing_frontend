@@ -34,8 +34,14 @@ const LoginScreen = () => {
     setIsLoading(true);
     try {
       await login(userKode, password);
-      // Navigasi akan di-handle otomatis oleh App.js
     } catch (error) {
+      // --- TAMBAHKAN LOG INI UNTUK MELIHAT ---
+      console.log(
+        'Login Gagal:',
+        error.response?.data?.message || error.message,
+      );
+      // ------------------------------------
+
       const message = error.response?.data?.message || 'Terjadi kesalahan.';
       Toast.show({type: 'error', text1: 'Gagal Login', text2: message});
     } finally {

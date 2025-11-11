@@ -44,11 +44,37 @@ const TerimaSjScreen = ({navigation}) => {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const scannerInputRef = useRef(null);
 
+  const totalJenisItem = useMemo(() => items.length, [items]);
+
+  const totalJumlahTerima = useMemo(() => {
+    return items.reduce(
+      (sum, item) => sum + (Number(item.jumlahTerima) || 0),
+      0,
+    );
+  }, [items]);
+
   const totalSelisih = useMemo(() => {
     return items.reduce(
       (sum, item) => sum + (item.jumlahKirim - item.jumlahTerima),
       0,
     );
+  }, [items]);
+
+  const summary = useMemo(() => {
+    const totalJenis = items.length;
+    const totalKirim = items.reduce(
+      (sum, item) => sum + (Number(item.jumlahKirim) || 0),
+      0,
+    );
+    const totalTerima = items.reduce(
+      (sum, item) => sum + (Number(item.jumlahTerima) || 0),
+      0,
+    );
+    const itemSelesai = items.filter(
+      item => item.jumlahTerima === item.jumlahKirim,
+    ).length;
+
+    return {totalJenis, totalKirim, totalTerima, itemSelesai};
   }, [items]);
 
   // Fungsi saat user memilih SJ dari modal pencarian
@@ -445,48 +471,50 @@ const TerimaSjScreen = ({navigation}) => {
       />
 
       <View style={styles.footerContainer}>
-        {sjHeader &&
-          (pendingData ? (
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={[styles.button, styles.buttonPending]}
-                onPress={handleSavePending}
-                disabled={isSaving}>
+        {items.length > 0 && (
+          <View style={styles.summaryContainer}>
+            <Text style={styles.summaryText}>
+              Item Selesai:{' '}
+              <Text style={styles.summaryValue}>
+                {summary.itemSelesai} / {summary.totalJenis}
+              </Text>
+            </Text>
+            <Text style={styles.summaryText}>
+              Total Qty:{' '}
+              <Text style={styles.summaryValue}>
+                {summary.totalTerima} / {summary.totalKirim}
+              </Text>
+            </Text>
+          </View>
+        )}
+
+        {/* Selalu tampilkan 2 tombol jika data sudah dimuat */}
+        {sjHeader && (
+          <View style={styles.buttonRow}>
+            <TouchableOpacity
+              style={[styles.button, styles.buttonPending]}
+              onPress={handleSavePending}
+              disabled={isSaving}>
+              {isSaving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
                 <Text style={styles.buttonText}>
-                  {isSaving ? 'Menyimpan...' : 'Update Pending'}
+                  {pendingData ? 'Update Pending' : 'Simpan Pending'}
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, {backgroundColor: '#4CAF50'}]}
-                onPress={handleSaveFinal}
-                disabled={isSaving}>
-                <Text style={styles.buttonText}>
-                  {isSaving ? 'Menyimpan...' : 'Simpan Final'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.buttonRow}>
-              {totalSelisih > 0 && (
-                <TouchableOpacity
-                  style={[styles.button, styles.buttonPending]}
-                  onPress={handleSavePending}
-                  disabled={isSaving}>
-                  <Text style={styles.buttonText}>
-                    {isSaving ? 'Menyimpan...' : 'Simpan Pending'}
-                  </Text>
-                </TouchableOpacity>
               )}
-              <TouchableOpacity
-                style={[styles.button, {backgroundColor: '#4CAF50'}]}
-                onPress={handleSaveFinal}
-                disabled={isSaving}>
-                <Text style={styles.buttonText}>
-                  {isSaving ? 'Menyimpan...' : 'Simpan Final'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ))}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, styles.buttonFinal]}
+              onPress={handleSaveFinal}
+              disabled={isSaving}>
+              {isSaving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Simpan Final</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -503,20 +531,27 @@ const styles = StyleSheet.create({
   lookupButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#017efcff',
+    backgroundColor: '#F4F6F8',
     height: 48,
     borderRadius: 8,
     paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    elevation: 0,
   },
-  lookupText: {flex: 1, fontSize: 16, marginHorizontal: 10, color: '#fff'},
-  lookupTextSelected: {color: '#fff', fontWeight: '600'},
+  lookupText: {flex: 1, fontSize: 16, marginHorizontal: 10, color: '#757575'},
+  lookupTextSelected: {color: '#212121', fontWeight: '600'},
+  loadPendingButton: {
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    backgroundColor: '#616161',
+    borderRadius: 8,
+  },
+  loadPendingButtonText: {color: '#FFFFFF', fontWeight: 'bold'},
   headerDetails: {marginTop: 8, color: '#666', fontSize: 12},
   scanContainer: {padding: 16},
   scanInput: {
-    color: '#212121',
     height: 50,
     borderWidth: 1,
     borderColor: '#ccc',
@@ -524,6 +559,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     backgroundColor: '#fff',
     fontSize: 16,
+    color: '#212121',
   },
   itemContainer: {
     flexDirection: 'row',
@@ -535,7 +571,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee',
   },
   itemInfo: {flex: 1, marginRight: 10},
-  itemName: {color: '#212121', fontSize: 16, fontWeight: '600'},
+  itemName: {fontSize: 16, fontWeight: '600', color: '#212121'},
   itemDetails: {color: '#666', marginTop: 4},
   qtyContainer: {alignItems: 'flex-end', minWidth: 60},
   qtyLabel: {color: '#888', fontSize: 12},
@@ -543,50 +579,41 @@ const styles = StyleSheet.create({
   emptyText: {textAlign: 'center', marginTop: 40, color: '#999'},
   footerContainer: {
     padding: 16,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#eee',
     backgroundColor: '#fff',
   },
+  summaryContainer: {
+    flexDirection: 'row', // Buat berdampingan
+    justifyContent: 'space-between', // Beri jarak
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  summaryText: {
+    fontSize: 14,
+    color: '#616161',
+  },
+  summaryValue: {
+    fontWeight: 'bold',
+    color: '#212121',
+    fontSize: 15,
+  },
+  buttonRow: {flexDirection: 'row', justifyContent: 'space-between', gap: 10},
   button: {
     padding: 16,
     alignItems: 'center',
     borderRadius: 12,
-    flex: 1,
-    marginHorizontal: 5,
     elevation: 2,
+    flex: 1,
   },
-  buttonPending: {
-    backgroundColor: '#FF9800', // Warna oranye untuk pending & update
-  },
-  buttonText: {
-    color: '#FFFFFF', // Pastikan warna teks putih
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
+  buttonFinal: {backgroundColor: '#4CAF50'},
+  buttonPending: {backgroundColor: '#FF9800'},
+  buttonText: {color: '#FFFFFF', fontWeight: 'bold', fontSize: 16},
   itemKode: {fontWeight: 'bold', color: '#212121'},
   itemNama: {color: '#757575'},
-  loadPendingButton: {
-    marginLeft: 10,
-    height: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 15,
-    backgroundColor: '#f7b900ff',
-    borderRadius: 8,
-  },
-  loadPendingButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  lookupButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
 });
 
 export default TerimaSjScreen;

@@ -78,6 +78,24 @@ const DashboardScreen = ({navigation}) => {
         userInfo?.cabang !== 'KBS',
     },
     {
+      title: 'Mutasi Kirim',
+      iconName: 'send',
+      onPress: () => navigation.navigate('MutasiStore'),
+      allowed:
+        userInfo?.cabang.startsWith('K') &&
+        userInfo?.cabang !== 'KDC' &&
+        userInfo?.cabang !== 'KBS',
+    },
+    {
+      title: 'Mutasi Terima',
+      iconName: 'corner-down-left',
+      onPress: () => navigation.navigate('MutasiTerima'),
+      allowed:
+        userInfo?.cabang.startsWith('K') &&
+        userInfo?.cabang !== 'KDC' &&
+        userInfo?.cabang !== 'KBS',
+    },
+    {
       // -> Menu Baru
       title: 'Laporan Pending',
       iconName: 'alert-triangle',

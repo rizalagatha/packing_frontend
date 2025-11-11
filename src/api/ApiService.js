@@ -15,13 +15,17 @@ export const loginApi = (userKode, password) => {
   });
 };
 
+export const selectBranchApi = (branchCode, preAuthToken) => {
+  return apiClient.post('/auth/select-branch', {
+    branchCode: branchCode,
+    preAuthToken: preAuthToken,
+  });
+};
+
 // --- Packing ---
-export const getPackingHistoryApi = token => {
+export const getPackingHistoryApi = (params, token) => {
   return apiClient.get('/packing/history', {
-    // -> TAMBAHKAN PARAMS INI
-    params: {
-      filterByUser: 'true',
-    },
+    params: params, // -> Kirim semua parameter (termasuk filter tanggal)
     headers: {Authorization: `Bearer ${token}`},
   });
 };
@@ -40,9 +44,13 @@ export const savePackingApi = (data, token) => {
 
 // --- Produk ---
 export const validateBarcodeApi = (barcode, gudang, token, spk_nomor) => {
-  // -> Tambah spk_nomor
+  const params = {gudang};
+
+  if (spk_nomor) {
+    params.spk_nomor = spk_nomor;
+  }
   return apiClient.get(`/produk/${barcode}`, {
-    params: {gudang, spk_nomor}, // -> Kirim sebagai query param
+    params: params,
     headers: {Authorization: `Bearer ${token}`},
   });
 };
@@ -138,6 +146,23 @@ export const getSuratJalanDetailApi = (nomorSj, token) => {
   });
 };
 
+export const searchPermintaanApi = (params, token) => {
+  return apiClient.get('/surat-jalan/search/permintaan', {
+    params: {
+      // { term, storeKode, page }
+      ...params,
+    },
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const loadItemsApi = (nomor, gudang, token) => {
+  return apiClient.get('/surat-jalan/load-items', {
+    params: {nomor, gudang},
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
 // --- Retur Admin ---
 export const searchPendingReturApi = (params, token) => {
   return apiClient.get('/retur-admin/search-penerimaan', {
@@ -205,6 +230,41 @@ export const getPackingDetailForCheckerApi = (nomor, token) => {
 
 export const onCheckApi = (data, token) => {
   return apiClient.post('/checker/on-check', data, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Mutasi Antar Store ---
+export const searchTujuanStoreApi = (params, token) => {
+  return apiClient.get('/mutasi-store/lookup-tujuan', {
+    params, // Tidak perlu term, tapi kita tetap kirim untuk konsistensi
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const saveMutasiApi = (data, token) => {
+  return apiClient.post('/mutasi-store', data, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Mutasi Antar Store Terima ---
+export const searchMutasiKirimApi = (params, token) => {
+  return apiClient.get('/mutasi-terima/search-kirim', {
+    params,
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const loadMutasiKirimApi = (nomorKirim, token) => {
+  const encodedNomor = encodeURIComponent(nomorKirim);
+  return apiClient.get(`/mutasi-terima/load-kirim/${encodedNomor}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const saveMutasiTerimaApi = (data, token) => {
+  return apiClient.post('/mutasi-terima', data, {
     headers: {Authorization: `Bearer ${token}`},
   });
 };

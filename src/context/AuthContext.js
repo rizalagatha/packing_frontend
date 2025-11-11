@@ -1,6 +1,6 @@
 import React, {createContext, useState, useEffect, useCallback} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {loginApi, apiClient} from '../api/ApiService';
+import {apiClient, loginApi, selectBranchApi} from '../api/ApiService';
 import Toast from 'react-native-toast-message';
 
 export const AuthContext = createContext();
@@ -10,20 +10,52 @@ export const AuthProvider = ({children}) => {
   const [userToken, setUserToken] = useState(null);
   const [userInfo, setUserInfo] = useState(null);
 
+  const [isBranchSelectionRequired, setBranchSelectionRequired] =
+    useState(false);
+  const [preAuthToken, setPreAuthToken] = useState(null);
+  const [branches, setBranches] = useState([]);
+
   // --- DEFINISIKAN FUNGSI LOGIN DAN LOGOUT DI SINI (SEBELUM useEffect) ---
 
   const login = useCallback(async (userKode, password) => {
+    // Fungsi ini sekarang bisa melempar error agar ditangani di LoginScreen
     const response = await loginApi(userKode, password);
-    if (response.data.success) {
-      const token = response.data.data.token;
-      const user = response.data.data.user;
-      setUserToken(token);
-      setUserInfo(user);
-      await AsyncStorage.setItem('userToken', token);
-      await AsyncStorage.setItem('userInfo', JSON.stringify(user));
+    if (response.data.multiBranch) {
+      // Kasus Multi Cabang
+      setPreAuthToken(response.data.preAuthToken);
+      setBranches(response.data.branches);
+      setBranchSelectionRequired(true);
+    } else {
+      // Kasus Cabang Tunggal
+      const {token, user} = response.data.data;
+      setTokenAndInfo(token, user);
     }
-    return response;
   }, []);
+
+  const finalizeLogin = useCallback(
+    async branchCode => {
+      try {
+        const response = await selectBranchApi(branchCode, preAuthToken); // Panggil API baru
+        const {token, user} = response.data.data;
+        setTokenAndInfo(token, user);
+        setBranchSelectionRequired(false); // Selesaikan proses pemilihan
+      } catch (error) {
+        // Handle error, misal tampilkan Toast
+        console.error('Gagal finalisasi login', error);
+      }
+    },
+    [preAuthToken],
+  );
+
+  const setTokenAndInfo = async (token, user) => {
+    setUserToken(token);
+    setUserInfo(user);
+    await AsyncStorage.setItem('userToken', token);
+    await AsyncStorage.setItem('userInfo', JSON.stringify(user));
+    setBranchSelectionRequired(false);
+    setPreAuthToken(null);
+    setBranches([]);
+  };
 
   const logout = useCallback(async () => {
     // Tidak perlu setIsLoading(true) agar tidak ada flash screen saat auto-logout
@@ -78,7 +110,16 @@ export const AuthProvider = ({children}) => {
 
   return (
     <AuthContext.Provider
-      value={{login, logout, isLoading, userToken, userInfo}}>
+      value={{
+        login,
+        logout,
+        isBranchSelectionRequired,
+        branches,
+        finalizeLogin,
+        isLoading,
+        userToken,
+        userInfo,
+      }}>
       {children}
     </AuthContext.Provider>
   );

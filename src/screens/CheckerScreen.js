@@ -26,6 +26,7 @@ import {
 import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
 import SoundPlayer from 'react-native-sound-player';
+import {Vibration} from 'react-native';
 
 const CheckerScreen = ({navigation}) => {
   const {userToken} = useContext(AuthContext);
@@ -37,6 +38,23 @@ const CheckerScreen = ({navigation}) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const packingInputRef = useRef(null);
+
+  const summary = useMemo(() => {
+    const totalJenis = items.length;
+    const totalKirim = items.reduce(
+      (sum, item) => sum + (Number(item.jumlahKirim) || 0),
+      0,
+    );
+    const totalScan = items.reduce(
+      (sum, item) => sum + (Number(item.jumlahScan) || 0),
+      0,
+    );
+    const itemSelesai = items.filter(
+      item => item.jumlahScan === item.jumlahKirim,
+    ).length;
+
+    return {totalJenis, totalKirim, totalScan, itemSelesai};
+  }, [items]);
 
   const playSound = type => {
     try {
@@ -84,21 +102,13 @@ const CheckerScreen = ({navigation}) => {
     try {
       const cleanPackingNumber = scannedPacking.trim().toUpperCase();
 
-      console.log('=== SCAN START ===');
-      console.log('Raw input:', scannedPacking);
-      console.log('Clean input:', cleanPackingNumber);
-      console.log('Length:', cleanPackingNumber.length);
-      console.log('Current items count:', items.length);
-
       const response = await getPackingDetailForCheckerApi(
         cleanPackingNumber,
         userToken,
       );
       const packingItems = response.data.data.items;
 
-      console.log('Packing items received:', packingItems.length);
       if (packingItems.length > 0) {
-        console.log('Sample packing item:', packingItems[0]);
       }
 
       if (items.length > 0) {
@@ -110,6 +120,8 @@ const CheckerScreen = ({navigation}) => {
         let foundMatch = false;
         let details = [];
 
+        const updatedItemKeys = new Set();
+
         packingItems.forEach(packItem => {
           const matches = newItems.filter(
             item =>
@@ -118,19 +130,18 @@ const CheckerScreen = ({navigation}) => {
               item.stbjd_packing === packItem.packd_pack_nomor,
           );
 
-          console.log(
-            `Searching: barcode=${packItem.packd_barcode}, size=${packItem.size}, packing=${packItem.packd_pack_nomor}`,
-          );
-          console.log(`Found ${matches.length} matches`);
-
           matches.forEach((match, idx) => {
             const itemIndex = newItems.findIndex(
               i => i.uniqueKey === match.uniqueKey,
             );
             if (itemIndex > -1) {
+              // Update kuantitasnya
               newItems[itemIndex].jumlahScan += packItem.packd_qty;
               foundMatch = true;
               details.push(`${match.ukuran} +${packItem.packd_qty}`);
+
+              // 2. Tandai item ini sebagai item yang baru diupdate
+              updatedItemKeys.add(match.uniqueKey);
             }
           });
         });
@@ -142,6 +153,20 @@ const CheckerScreen = ({navigation}) => {
             text2: details.join(', '),
           });
           playSound('success');
+          Vibration.vibrate(100);
+
+          const updatedItems = [];
+          const otherItems = [];
+
+          newItems.forEach(item => {
+            if (updatedItemKeys.has(item.uniqueKey)) {
+              updatedItems.push(item);
+            } else {
+              otherItems.push(item);
+            }
+          });
+
+          return [...updatedItems, ...otherItems];
         } else {
           Toast.show({
             type: 'error',
@@ -149,8 +174,9 @@ const CheckerScreen = ({navigation}) => {
             text2: 'Item tidak ditemukan di STBJ ini.',
           });
           playSound('error');
+          Vibration.vibrate(400);
+          return newItems;
         }
-        return newItems;
       });
     } catch (error) {
       console.error('=== SCAN ERROR ===');
@@ -163,6 +189,7 @@ const CheckerScreen = ({navigation}) => {
         text2: error.response?.data?.message || 'Gagal scan packing.',
       });
       playSound('error');
+      Vibration.vibrate(400);
     }
 
     setScannedPacking('');
@@ -245,6 +272,8 @@ const CheckerScreen = ({navigation}) => {
             onChangeText={setStbjNomor}
             onSubmitEditing={handleLoadStbj}
             editable={!isLoading}
+            keyboardType="default" // -> Biarkan keyboard default
+            autoCapitalize="characters" // -> (Opsional) Membuat input otomatis kapital
           />
           <TouchableOpacity
             style={styles.loadButton}
@@ -290,6 +319,22 @@ const CheckerScreen = ({navigation}) => {
       )}
 
       <View style={styles.footerContainer}>
+        {items.length > 0 && (
+          <View style={styles.summaryContainer}>
+            <Text style={styles.summaryText}>
+              Item Selesai:{' '}
+              <Text style={styles.summaryValue}>
+                {summary.itemSelesai} / {summary.totalJenis}
+              </Text>
+            </Text>
+            <Text style={styles.summaryText}>
+              Total Qty:{' '}
+              <Text style={styles.summaryValue}>
+                {summary.totalScan} / {summary.totalKirim}
+              </Text>
+            </Text>
+          </View>
+        )}
         <TouchableOpacity
           style={[styles.button, isButtonDisabled && styles.buttonDisabled]}
           onPress={handleOnCheck}
@@ -378,6 +423,23 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#eee',
     backgroundColor: '#fff',
+  },
+  summaryContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  summaryText: {
+    fontSize: 14,
+    color: '#616161',
+  },
+  summaryValue: {
+    fontWeight: 'bold',
+    color: '#212121',
+    fontSize: 15,
   },
   button: {
     backgroundColor: '#4CAF50',

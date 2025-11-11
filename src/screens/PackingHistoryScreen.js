@@ -8,101 +8,243 @@ import {
   TouchableOpacity,
   StatusBar,
   ActivityIndicator,
+  SafeAreaView,
 } from 'react-native';
 import {AuthContext} from '../context/AuthContext';
 import {getPackingHistoryApi, getPackingDetailApi} from '../api/ApiService'; // -> Tambah getPackingDetailApi
 import Icon from 'react-native-vector-icons/Feather';
+import DatePicker from 'react-native-date-picker';
+import Toast from 'react-native-toast-message';
+
+const formatDate = date => {
+  return date.toISOString().split('T')[0];
+};
+
+// Komponen terpisah untuk merender item header
+const HistoryHeaderItem = React.memo(({item, onPress, isExpanded}) => (
+  <TouchableOpacity
+    style={styles.historyItemWrapper}
+    onPress={() => onPress(item)}>
+    <View style={styles.historyItem}>
+      <View style={styles.historyInfo}>
+        <Text style={styles.historyNomor}>{item.pack_nomor}</Text>
+        <Text style={styles.historySpk}>SPK: {item.pack_spk_nomor}</Text>
+      </View>
+      <View style={styles.historyQtyContainer}>
+        <Text style={styles.historyJumlah}>{item.total_qty || 0} Pcs</Text>
+        <Text style={styles.historyTanggal}>
+          {new Date(item.pack_tanggal).toLocaleDateString('id-ID')}
+        </Text>
+      </View>
+      <Icon
+        name={isExpanded ? 'chevron-up' : 'chevron-down'}
+        size={24}
+        color="#616161"
+      />
+    </View>
+  </TouchableOpacity>
+));
+
+// Komponen terpisah untuk merender item detail
+const HistoryDetailItem = React.memo(({detail}) => (
+  <View style={styles.detailItem}>
+    <View style={styles.detailInfo}>
+      {/* --- PERBAIKAN DI SINI --- */}
+      <Text style={styles.detailName}>{detail.brg_kaosan}</Text>
+      <Text style={styles.detailSize}>Size: {detail.packd_size}</Text>
+      {/* ------------------------- */}
+    </View>
+    <Text style={styles.detailQty}>x {detail.packd_qty}</Text>
+  </View>
+));
+
+const FilterComponent = ({
+  onFilterPress,
+  onApplyFilter,
+  setStartDate,
+  setEndDate,
+  startDate,
+  endDate,
+  openStartPicker,
+  setOpenStartPicker,
+  openEndPicker,
+  setOpenEndPicker,
+}) => (
+  <View style={styles.filterContainer}>
+    <View style={styles.dateFilterSection}>
+      <TouchableOpacity
+        style={styles.dateInput}
+        onPress={() => setOpenStartPicker(true)}>
+        <Icon name="calendar" size={16} color="#616161" />
+        <Text style={styles.dateText}>
+          {startDate.toLocaleDateString('id-ID')}
+        </Text>
+      </TouchableOpacity>
+      <Text style={{marginHorizontal: 5}}>s/d</Text>
+      <TouchableOpacity
+        style={styles.dateInput}
+        onPress={() => setOpenEndPicker(true)}>
+        <Icon name="calendar" size={16} color="#616161" />
+        <Text style={styles.dateText}>
+          {endDate.toLocaleDateString('id-ID')}
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.applyButton} onPress={onApplyFilter}>
+        <Icon name="search" size={20} color="#FFFFFF" />
+      </TouchableOpacity>
+    </View>
+    <View style={styles.quickFilterSection}>
+      <TouchableOpacity
+        style={styles.quickFilterButton}
+        onPress={() => onFilterPress('today')}>
+        <Text style={styles.quickFilterText}>Hari Ini</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.quickFilterButton}
+        onPress={() => onFilterPress('7days')}>
+        <Text style={styles.quickFilterText}>7 Hari</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.quickFilterButton}
+        onPress={() => onFilterPress('30days')}>
+        <Text style={styles.quickFilterText}>30 Hari</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+);
 
 const PackingHistoryScreen = ({navigation}) => {
   const {userToken} = useContext(AuthContext);
   const [history, setHistory] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // State baru untuk mengelola item yang sedang dibuka
   const [expandedNomor, setExpandedNomor] = useState(null);
   const [detailItems, setDetailItems] = useState([]);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
 
-  const fetchHistory = useCallback(async () => {
-    try {
-      const response = await getPackingHistoryApi(userToken);
-      setHistory(response.data.data);
-    } catch (error) {
-      console.error('Gagal memuat riwayat', error);
-    }
-  }, [userToken]);
+  const [startDate, setStartDate] = useState(new Date());
+  const [endDate, setEndDate] = useState(new Date());
+  const [openStartPicker, setOpenStartPicker] = useState(false);
+  const [openEndPicker, setOpenEndPicker] = useState(false);
+
+  const [pagination, setPagination] = useState({currentPage: 1, totalPages: 1});
+
+  const fetchHistory = useCallback(
+    async (start, end, page = 1) => {
+      if (page === 1) {
+        setIsRefreshing(true);
+        setHistory([]); // Kosongkan riwayat jika ini halaman pertama
+      } else {
+        setIsLoadingMore(true); // Tampilkan loading di bawah
+      }
+
+      try {
+        const params = {
+          filterByUser: 'true',
+          startDate: formatDate(start),
+          endDate: formatDate(end),
+          page: page,
+          limit: 15, // Minta 15 item per halaman
+        };
+        const response = await getPackingHistoryApi(params, userToken);
+        if (page === 1) {
+          setHistory(response.data.data);
+        } else {
+          // Jika "load more", tambahkan data baru ke data lama
+          setHistory(prev => [...prev, ...response.data.data]);
+        }
+        setPagination(response.data.pagination);
+      } catch (error) {
+        console.error('Gagal memuat riwayat packing', error);
+        Toast.show({
+          type: 'error',
+          text1: 'Gagal Memuat',
+          text2: 'Gagal memuat riwayat.',
+        });
+      } finally {
+        setIsRefreshing(false);
+        setIsLoadingMore(false);
+      }
+    },
+    [userToken],
+  );
 
   useEffect(() => {
-    fetchHistory();
-    const unsubscribe = navigation.addListener('focus', () => fetchHistory());
-    return unsubscribe;
-  }, [navigation, fetchHistory]);
+    const today = new Date();
+    fetchHistory(today, today, 1);
+  }, [fetchHistory]); // Hanya dijalankan sekali
 
   const onRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    fetchHistory().finally(() => setIsRefreshing(false));
-  }, [fetchHistory]);
+    fetchHistory(startDate, endDate, 1); // Refresh selalu panggil halaman 1
+  }, [startDate, endDate, fetchHistory]);
+
+  const handleQuickFilter = period => {
+    const today = new Date();
+    let newStartDate = new Date();
+    const newEndDate = new Date(today); // End date selalu hari ini
+
+    if (period === '7days') {
+      newStartDate.setDate(today.getDate() - 6);
+    } else if (period === '30days') {
+      newStartDate.setDate(today.getDate() - 29);
+    }
+
+    setStartDate(newStartDate);
+    setEndDate(newEndDate);
+    fetchHistory(newStartDate, newEndDate, 1);
+  };
+
+  const handleApplyCustomFilter = () => {
+    fetchHistory(startDate, endDate, 1); // Filter custom selalu panggil halaman 1
+  };
+
+  const handleLoadMore = () => {
+    // Fungsi untuk memuat halaman berikutnya
+    if (pagination.currentPage < pagination.totalPages && !isLoadingMore) {
+      fetchHistory(startDate, endDate, pagination.currentPage + 1);
+    }
+  };
 
   // Fungsi saat item di-klik
   const handleItemPress = async item => {
-    const packNomor = item.pack_nomor;
-    // Jika item yang sama di-klik lagi, tutup detailnya
-    if (expandedNomor === packNomor) {
+    const nomor = item.pack_nomor;
+    if (expandedNomor === nomor) {
       setExpandedNomor(null);
-      setDetailItems([]);
       return;
     }
 
-    setExpandedNomor(packNomor); // Buka item yang di-klik
+    setExpandedNomor(nomor);
     setIsDetailLoading(true);
     try {
-      const response = await getPackingDetailApi(packNomor, userToken);
+      const response = await getPackingDetailApi(nomor, userToken);
       setDetailItems(response.data.data.items);
     } catch (error) {
-      console.error('Gagal memuat detail', error);
-      setExpandedNomor(null); // Tutup lagi jika error
+      console.error('Gagal memuat detail packing', error);
+      setExpandedNomor(null);
     } finally {
       setIsDetailLoading(false);
     }
   };
 
   const renderItem = ({item}) => (
-    <View style={styles.historyItemWrapper}>
-      <TouchableOpacity
-        style={styles.historyItem}
-        onPress={() => handleItemPress(item)}>
-        <View>
-          <Text style={styles.historyNomor}>{item.pack_nomor}</Text>
-          <Text style={styles.historyTanggal}>
-            {new Date(item.pack_tanggal).toLocaleDateString('id-ID')}
-          </Text>
-          <Text style={styles.historySpk}>SPK: {item.pack_spk_nomor}</Text>
-        </View>
-        <View style={{flexDirection: 'row', alignItems: 'center'}}>
-          <Text style={styles.historyJumlah}>{item.total_qty || 0} Pcs</Text>
-          <Icon
-            name={
-              expandedNomor === item.pack_nomor ? 'chevron-up' : 'chevron-down'
-            }
-            size={24}
-            color="#666"
-          />
-        </View>
-      </TouchableOpacity>
-
-      {/* Tampilkan detail jika item ini sedang dibuka */}
+    <View>
+      <HistoryHeaderItem
+        item={item}
+        onPress={handleItemPress}
+        isExpanded={expandedNomor === item.pack_nomor}
+      />
       {expandedNomor === item.pack_nomor && (
         <View style={styles.detailContainer}>
           {isDetailLoading ? (
-            <ActivityIndicator />
+            <ActivityIndicator color="#D32F2F" />
           ) : (
             detailItems.map((detail, index) => (
-              <View key={index} style={styles.detailItem}>
-                <Text style={styles.detailName}>
-                  {detail.packd_brg_kaosan} ({detail.size})
-                </Text>
-                <Text style={styles.detailQty}>x {detail.packd_qty}</Text>
-              </View>
+              <HistoryDetailItem
+                key={`${detail.packd_barcode}-${index}`}
+                detail={detail}
+              />
             ))
           )}
         </View>
@@ -110,88 +252,242 @@ const PackingHistoryScreen = ({navigation}) => {
     </View>
   );
 
+  const renderFooter = () => {
+    if (isLoadingMore) {
+      return (
+        <ActivityIndicator
+          size="large"
+          color="#D32F2F"
+          style={{marginVertical: 20}}
+        />
+      );
+    }
+    if (pagination.currentPage < pagination.totalPages) {
+      return (
+        <TouchableOpacity
+          style={styles.loadMoreButton}
+          onPress={handleLoadMore}>
+          <Text style={styles.loadMoreText}>Muat Data Berikutnya</Text>
+        </TouchableOpacity>
+      );
+    }
+    return null; // Tidak menampilkan apa-apa jika sudah halaman terakhir
+  };
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f0f2f5" />
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* --- Panggil Komponen Filter --- */}
+      <FilterComponent
+        startDate={startDate}
+        endDate={endDate}
+        setStartDate={setStartDate}
+        setEndDate={setEndDate}
+        openStartPicker={openStartPicker}
+        setOpenStartPicker={setOpenStartPicker}
+        openEndPicker={openEndPicker}
+        setOpenEndPicker={setOpenEndPicker}
+        onFilterPress={handleQuickFilter}
+        onApplyFilter={handleApplyCustomFilter}
+      />
+
+      <DatePicker
+        modal
+        mode="date"
+        open={openStartPicker}
+        date={startDate}
+        onConfirm={date => {
+          setOpenStartPicker(false);
+          setStartDate(date);
+        }}
+        onCancel={() => {
+          setOpenStartPicker(false);
+        }}
+      />
+      <DatePicker
+        modal
+        mode="date"
+        open={openEndPicker}
+        date={endDate}
+        onConfirm={date => {
+          setOpenEndPicker(false);
+          setEndDate(date);
+        }}
+        onCancel={() => {
+          setOpenEndPicker(false);
+        }}
+      />
+
       <FlatList
         data={history}
         keyExtractor={item => item.pack_nomor}
         renderItem={renderItem}
-        extraData={expandedNomor} // -> Memberitahu FlatList untuk re-render saat state ini berubah
+        extraData={expandedNomor}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyHistory}>Belum ada riwayat packing.</Text>
+            <Text style={styles.emptyText}>
+              Tidak ada riwayat pada periode ini.
+            </Text>
           </View>
         }
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
         }
-        contentContainerStyle={{paddingTop: 16}}
+        ListFooterComponent={renderFooter}
+        onEndReached={handleLoadMore} // Bisa juga pakai ini untuk infinite scroll
+        onEndReachedThreshold={0.5}
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: '#f0f2f5'},
-  historyItemWrapper: {
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    borderRadius: 10,
-    marginBottom: 10,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+  filterContainer: {
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
   },
-  historyItem: {
-    padding: 15,
+  dateFilterSection: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  historyNomor: {fontWeight: 'bold', fontSize: 16, color: '#2D3748'},
-  historyTanggal: {color: '#666', fontSize: 12, marginTop: 4},
-  historyJumlah: {
-    fontSize: 14,
-    color: '#333',
-    fontWeight: '500',
-    marginRight: 10,
-  },
-  historySpk: {
-    color: '#888',
-    fontSize: 12,
-    fontStyle: 'italic',
-    marginTop: 4,
-  },
-  emptyContainer: {
+  dateInput: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 44,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    backgroundColor: '#F4F6F8',
+  },
+  dateText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#212121',
+  },
+  applyButton: {
+    marginLeft: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#616161',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: '50%',
   },
-  emptyHistory: {textAlign: 'center', color: '#999'},
-
-  // Style baru untuk bagian detail
+  quickFilterSection: {
+    flexDirection: 'row',
+    marginTop: 12,
+  },
+  quickFilterButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    marginRight: 8,
+  },
+  quickFilterText: {
+    color: '#616161',
+    fontSize: 12,
+  },
+  historyItemWrapper: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 12,
+    elevation: 2,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  historyInfo: {
+    flex: 1,
+  },
+  historyNomor: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#212121',
+  },
+  historySpk: {
+    fontSize: 12,
+    color: '#757575',
+    marginTop: 4,
+  },
+  historyQtyContainer: {
+    alignItems: 'flex-end',
+    marginHorizontal: 10,
+  },
+  historyJumlah: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#212121',
+  },
+  historyTanggal: {
+    fontSize: 12,
+    color: '#757575',
+    marginTop: 4,
+  },
   detailContainer: {
-    paddingHorizontal: 15,
-    paddingBottom: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    backgroundColor: '#FAFAFA',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    marginHorizontal: 16,
   },
   detailItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  detailInfo: {
+    flex: 1,
+    marginRight: 10,
   },
   detailName: {
-    color: '#333',
+    fontSize: 14,
+    color: '#212121',
+    fontWeight: '600',
+  },
+  detailSize: {
     fontSize: 12,
+    color: '#757575',
+    marginTop: 2,
   },
   detailQty: {
-    color: '#333',
-    fontSize: 14,
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#212121',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    marginTop: 50,
+  },
+  emptyText: {
+    color: '#757575',
+    fontSize: 16,
+  },
+  loadMoreButton: {
+    backgroundColor: '#616161',
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: 8,
+    margin: 16,
+  },
+  loadMoreText: {
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: 'bold',
   },
 });

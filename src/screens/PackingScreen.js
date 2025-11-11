@@ -62,14 +62,14 @@ const PackingScreen = ({navigation}) => {
   const [spkOptions, setSpkOptions] = useState([]);
   const [initialBarcode, setInitialBarcode] = useState(null);
 
-  const playSound = type => {
+  const playSound = useCallback(type => {
     try {
       const soundName = type === 'success' ? 'beep_success' : 'beep_error';
       SoundPlayer.playSoundFile(soundName, 'mp3');
     } catch (e) {
-      console.log(`Tidak bisa memutar suara`, e);
+      console.log('Tidak bisa memutar suara', e);
     }
-  };
+  }, []);
 
   // Menghitung total kuantitas
   const totalQty = useMemo(() => {
@@ -124,86 +124,107 @@ const PackingScreen = ({navigation}) => {
   const validateAndAddItem = useCallback(
     async (barcode, spk) => {
       if (!spk) {
-        // Kembalikan fokus jika SPK tidak valid
         setTimeout(() => barcodeInputRef.current?.focus(), 0);
         return;
       }
 
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      const existingItemIndex = items.findIndex(
-        item => item.barcode === barcode,
-      );
+      try {
+        const gudang = userInfo.cabang;
+        const response = await validateBarcodeApi(
+          barcode,
+          gudang,
+          userToken,
+          spk.spkd_nomor,
+        );
+        const product = response.data.data;
 
-      if (existingItemIndex > -1) {
-        const newItems = [...items];
-        newItems[existingItemIndex].qty += 1;
-        setItems(newItems);
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+
+        // ✅ PERUBAHAN UTAMA: Gunakan functional update
+        setItems(prevItems => {
+          const existingItemIndex = prevItems.findIndex(
+            item => item.barcode === barcode,
+          );
+
+          if (existingItemIndex > -1) {
+            const newItems = [...prevItems];
+            newItems[existingItemIndex].qty =
+              (Number(newItems[existingItemIndex].qty) || 0) + 1;
+            return newItems;
+          } else {
+            const newItem = {
+              barcode: product.barcode,
+              kode: product.kode,
+              nama: product.nama,
+              ukuran: product.ukuran,
+              stok: product.stok,
+              qty: 1,
+            };
+            return [newItem, ...prevItems];
+          }
+        });
+
         setHighlightedBarcode(barcode);
         playSound('success');
-      } else {
-        try {
-          const gudang = userInfo.cabang;
-          const response = await validateBarcodeApi(
-            barcode,
-            gudang,
-            userToken,
-            spk.spkd_nomor,
-          );
-          const product = response.data.data;
-          const newItem = {
-            barcode: product.barcode,
-            kode: product.kode,
-            nama: product.nama,
-            ukuran: product.ukuran,
-            stok: product.stok,
-            qty: 1,
-          };
-          setItems(prevItems => [newItem, ...prevItems]);
-          setHighlightedBarcode(barcode);
-          playSound('success');
-        } catch (error) {
-          Toast.show({
-            type: 'error',
-            text1: 'Error Barcode',
-            text2: error.response?.data?.message || 'Barcode tidak valid.',
-          });
-          playSound('error');
-        }
+      } catch (error) {
+        const message = error.response?.data?.message || 'Barcode tidak valid.';
+        Toast.show({type: 'error', text1: 'Error Barcode', text2: message});
+        playSound('error');
       }
 
-      // Pindahkan fokus ke sini, di akhir fungsi
       setTimeout(() => {
         barcodeInputRef.current?.focus();
       }, 0);
     },
-    [items, userInfo.cabang, userToken],
+    [userInfo.cabang, userToken, playSound], // ✅ Dependency disederhanakan
   );
 
   const handleSelectSpk = useCallback(
-    (spk, barcodeToProcess) => {
+    async (spk, barcodeToProcess) => {
+      // Jika sudah ada SPK terpilih, abaikan pemilihan baru
+      if (selectedSpk) {
+        Toast.show({
+          type: 'info',
+          text1: 'SPK Terkunci',
+          text2: `Sudah terkunci di ${selectedSpk.spkd_nomor}. Gunakan tombol Reset untuk ganti.`,
+        });
+        setSpkModalVisible(false);
+        barcodeInputRef.current?.focus();
+        return;
+      }
+
+      // SPK pertama kali dipilih → kunci di sini
       setSelectedSpk(spk);
       setSpkModalVisible(false);
       Toast.show({type: 'info', text1: 'SPK Dipilih', text2: spk.spkd_nomor});
+
+      // PERBAIKAN: Validasi ulang barcode pertama dengan SPK yang dipilih
       if (barcodeToProcess) {
-        validateAndAddItem(barcodeToProcess, spk);
+        try {
+          await validateAndAddItem(barcodeToProcess, spk);
+        } catch (error) {
+          console.log(
+            '   ❌ Error saat validasi barcode pertama:',
+            error.message,
+          );
+        }
       } else {
-        // Jika tidak ada barcode yg perlu diproses, kembalikan fokus
         barcodeInputRef.current?.focus();
       }
     },
-    [validateAndAddItem],
+    [validateAndAddItem, selectedSpk],
   );
 
   const handleBarcodeScan = useCallback(async () => {
     if (!scannedBarcode || isScanning) return;
 
-    const barcode = scannedBarcode;
+    const barcode = scannedBarcode.trim();
     setScannedBarcode('');
     setIsScanning(true);
 
     try {
       if (!selectedSpk) {
-        // --- Alur Scan Pertama (Mencari SPK) ---
+        // --- Alur Scan Pertama: Pilih SPK dulu ---
         const response = await searchSpkByBarcodeApi(barcode, userToken);
         const spkData = response.data.data.items;
 
@@ -211,38 +232,38 @@ const PackingScreen = ({navigation}) => {
           Toast.show({
             type: 'error',
             text1: 'Tidak Ditemukan',
-            text2: 'Tidak ada SPK yang terkait.',
+            text2: 'Tidak ada SPK yang terkait dengan barcode ini.',
           });
           playSound('error');
           return;
         }
 
         if (spkData.length === 1) {
+          // Pilih otomatis jika cuma satu
           handleSelectSpk(spkData[0], barcode);
         } else {
+          // Jika lebih dari satu → tampilkan pilihan
           setSpkOptions(spkData);
           setInitialBarcode(barcode);
           setSpkModalVisible(true);
         }
       } else {
-        // --- Alur Scan Kedua dan Seterusnya ---
+        // --- Alur Scan Berikutnya ---
+        // Pakai SPK yang sudah terkunci, tanpa buka modal lagi
         await validateAndAddItem(barcode, selectedSpk);
       }
     } catch (error) {
-      // Menangani error dari pencarian SPK atau validasi item
       const message =
         error.response?.data?.message ||
         'Terjadi kesalahan saat memproses barcode.';
       Toast.show({type: 'error', text1: 'Error', text2: message});
       playSound('error');
     } finally {
-      // --- BLOK INI DIJAMIN SELALU DIJALANKAN DI AKHIR ---
       setIsScanning(false);
-      // Trik untuk memaksa fokus kembali dengan andal
       setTimeout(() => {
         barcodeInputRef.current?.blur();
         barcodeInputRef.current?.focus();
-      }, 100); // Jeda singkat untuk memastikan render selesai
+      }, 100);
     }
   }, [
     scannedBarcode,
@@ -251,6 +272,7 @@ const PackingScreen = ({navigation}) => {
     userToken,
     handleSelectSpk,
     validateAndAddItem,
+    playSound,
   ]);
 
   const handleDeleteItem = useCallback(itemToDelete => {
@@ -364,9 +386,11 @@ const PackingScreen = ({navigation}) => {
                 <TouchableOpacity
                   style={styles.spkItem}
                   onPress={() => handleSelectSpk(item, initialBarcode)}>
-                  <Text style={styles.spkNomor}>{item.spkd_nomor}</Text>
+                  <View style={styles.spkRow}>
+                    <Text style={styles.spkNomor}>{item.spkd_nomor}</Text>
+                    <Text style={styles.spkQty}>Qty: {item.qty_order}</Text>
+                  </View>
                   <Text style={styles.spkNama}>{item.spk_nama}</Text>
-                  {/* -> TAMPILKAN TANGGAL DI SINI */}
                   <Text style={styles.spkTanggal}>
                     Tanggal:{' '}
                     {new Date(item.spk_tanggal).toLocaleDateString('id-ID')}
@@ -587,7 +611,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   spkItem: {padding: 15, borderBottomWidth: 1, borderBottomColor: '#eee'},
-  spkNomor: {fontSize: 16, fontWeight: '600'},
+  spkRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  spkNomor: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#212121', // Pastikan warna ada
+  },
+  spkQty: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#D32F2F', // Beri warna merah agar menonjol
+  },
   spkNama: {fontSize: 14, color: '#666'},
   spkTanggal: {
     fontSize: 12,
