@@ -54,10 +54,30 @@ const DashboardScreen = ({navigation}) => {
       allowed: userInfo?.cabang === 'KDC' || userInfo?.cabang === 'KBS',
     },
     {
+      title: 'Stok Menipis',
+      iconName: 'trending-down',
+      onPress: () => navigation.navigate('LowStock'),
+      // UBAH ALLOWED: KDC, KBS, DAN semua Store (yang berawalan K, bukan P04)
+      allowed:
+        userInfo?.cabang === 'KDC' ||
+        userInfo?.cabang === 'KBS' ||
+        (userInfo?.cabang.startsWith('K') && userInfo?.cabang !== 'P04'),
+    },
+    {
       title: 'Riwayat SJ', // -> Menu Baru
       iconName: 'archive',
       onPress: () => navigation.navigate('RiwayatSuratJalan'),
       allowed: userInfo?.cabang === 'KDC' || userInfo?.cabang === 'KBS',
+    },
+    {
+      title: 'Penjualan Langsung',
+      iconName: 'shopping-bag',
+      // UBAH DARI 'PenjualanLangsung' MENJADI 'PenjualanList'
+      onPress: () => navigation.navigate('PenjualanList'),
+      allowed:
+        userInfo?.cabang?.startsWith('K') &&
+        userInfo?.cabang !== 'KDC' &&
+        userInfo?.cabang !== 'KBS',
     },
     {
       title: 'Terima SJ',
@@ -92,6 +112,16 @@ const DashboardScreen = ({navigation}) => {
       onPress: () => navigation.navigate('MutasiTerima'),
       allowed:
         userInfo?.cabang.startsWith('K') &&
+        userInfo?.cabang !== 'KDC' &&
+        userInfo?.cabang !== 'KBS',
+    },
+    {
+      title: 'Minta Barang',
+      iconName: 'shopping-cart', // Pastikan ikon ini ada di Feather icons
+      onPress: () => navigation.navigate('MintaBarang'),
+      // LOGIKA: Tampilkan HANYA jika cabang berawalan 'K' DAN BUKAN KDC/KBS
+      allowed:
+        userInfo?.cabang?.startsWith('K') &&
         userInfo?.cabang !== 'KDC' &&
         userInfo?.cabang !== 'KBS',
     },

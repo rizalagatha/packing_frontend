@@ -20,6 +20,10 @@ import LaporanPendingScreen from './src/screens/LaporanPendingScreen';
 import CheckerScreen from './src/screens/CheckerScreen';
 import MutasiStoreScreen from './src/screens/MutasiStoreScreen';
 import MutasiTerimaScreen from './src/screens/MutasiTerimaScreen';
+import LowStockScreen from './src/screens/LowStockScreen';
+import MintaBarangScreen from './src/screens/MintaBarangScreen';
+import PenjualanLangsungScreen from './src/screens/PenjualanLangsungScreen';
+import PenjualanListScreen from './src/screens/PenjualanListScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -104,6 +108,11 @@ const App = () => {
               options={{title: 'Buat Surat Jalan'}}
             />
             <Stack.Screen
+              name="LowStock"
+              component={LowStockScreen}
+              options={{title: 'Analisis Stok Menipis'}}
+            />
+            <Stack.Screen
               name="RiwayatSuratJalan"
               component={RiwayatSuratJalanScreen}
               options={{title: 'Riwayat Surat Jalan'}}
@@ -142,6 +151,21 @@ const App = () => {
               name="MutasiTerima"
               component={MutasiTerimaScreen}
               options={{title: 'Mutasi Store Terima'}}
+            />
+            <Stack.Screen
+              name="MintaBarang"
+              component={MintaBarangScreen}
+              options={{title: 'Minta Barang ke DC'}}
+            />
+            <Stack.Screen
+              name="PenjualanLangsung"
+              component={PenjualanLangsungScreen}
+              options={{title: 'Penjualan Langsung'}}
+            />
+            <Stack.Screen
+              name="PenjualanList"
+              component={PenjualanListScreen}
+              options={{title: 'Daftar Penjualan'}}
             />
           </>
         )}

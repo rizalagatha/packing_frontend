@@ -268,3 +268,86 @@ export const saveMutasiTerimaApi = (data, token) => {
     headers: {Authorization: `Bearer ${token}`},
   });
 };
+
+// --- Analisis Stok ---
+export const getLowStockApi = (params, token) => {
+  return apiClient.get('/stock/low-stock', {
+    params, // { cabang, kategori }
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Minta Barang ---
+export const getAutoBufferApi = token => {
+  return apiClient.get('/minta-barang/auto-buffer', {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+export const scanMintaBarangApi = (barcode, token) => {
+  return apiClient.get(`/minta-barang/scan/${barcode}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+export const saveMintaBarangApi = (data, token) => {
+  return apiClient.post('/minta-barang', data, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Penjualan Langsung ---
+export const getDefaultCustomerApi = token => {
+  return apiClient.get('/penjualan/default-customer', {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+export const scanProdukPenjualanApi = (barcode, token) => {
+  return apiClient.get(`/penjualan/scan/${barcode}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+export const savePenjualanApi = (data, token) => {
+  return apiClient.post('/penjualan/save', data, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const searchRekeningApi = (params, token) => {
+  return apiClient.get('/penjualan/rekening', {
+    params,
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Invoice Browse (Mobile) ---
+export const getInvoicesApi = (params, token) => {
+  return apiClient.get('/invoices', {
+    params,
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getInvoiceDetailsApi = (nomor, token) => {
+  // Encode nomor karena bisa mengandung karakter slash atau titik
+  return apiClient.get(`/invoices/details/${encodeURIComponent(nomor)}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getActivePromosApi = (params, token) => {
+  return apiClient.get('/penjualan/promos', {
+    params,
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getPrintDataApi = (nomor, token) => {
+  return apiClient.get(`/penjualan/print/${encodeURIComponent(nomor)}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const sendStrukWaApi = (data, token) => {
+  return apiClient.post('/penjualan/send-wa', data, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};

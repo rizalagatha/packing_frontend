@@ -5,6 +5,7 @@ import React, {
   useLayoutEffect,
   useRef,
   useMemo,
+  useEffect,
 } from 'react';
 import {
   View,
@@ -33,8 +34,9 @@ import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
 import SearchModal from '../components/SearchModal';
 import SoundPlayer from 'react-native-sound-player';
+import DatePicker from 'react-native-date-picker';
 
-const SuratJalanScreen = ({navigation}) => {
+const SuratJalanScreen = ({navigation, route}) => {
   const {userInfo, userToken} = useContext(AuthContext);
 
   const scannerInputRef = useRef(null);
@@ -42,7 +44,7 @@ const SuratJalanScreen = ({navigation}) => {
   // State untuk data form
   const [store, setStore] = useState(null); // Akan berisi { kode: 'K01', nama: 'STORE 01' }
   const [keterangan, setKeterangan] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [items, setItems] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
   const [scannedValue, setScannedValue] = useState('');
@@ -52,6 +54,41 @@ const SuratJalanScreen = ({navigation}) => {
   const [isStoreModalVisible, setStoreModalVisible] = useState(false);
   const [permintaan, setPermintaan] = useState(null);
   const [isPermintaanModalVisible, setPermintaanModalVisible] = useState(false);
+  const [date, setDate] = useState(new Date());
+  const [openDatePicker, setOpenDatePicker] = useState(false);
+  const [lastScannedBarcode, setLastScannedBarcode] = useState(null);
+  const [isLowStockMode, setIsLowStockMode] = useState(false);
+
+  // --- LOGIKA AUTO-FILL DARI LOW STOCK SCREEN (DIPERBAIKI) ---
+  useEffect(() => {
+    if (route.params?.initialStore && route.params?.initialItems) {
+      setStore(route.params.initialStore);
+
+      const prefilledItems = route.params.initialItems.map(item => ({
+        ...item,
+        // Ambil stok real, jika tidak ada ambil stok biasa, jika tidak ada 0
+        stok: item.stok || 0,
+        jumlahKirim: 0,
+        jumlahScan: 0,
+        qty: 0,
+      }));
+
+      setItems(prefilledItems);
+      setKeterangan('BARANG LOW STOCK');
+
+      // Set mode ke permintaan (tanpa no permintaan) agar scan manual
+      setScanMode('permintaan');
+      setPermintaan(null);
+
+      setIsLowStockMode(true);
+
+      Toast.show({
+        type: 'success',
+        text1: 'Data Dimuat',
+        text2: 'Silakan scan barang untuk mengisi jumlah.',
+      });
+    }
+  }, [route.params]);
 
   const totalJenisItem = useMemo(() => items.length, [items]);
 
@@ -131,6 +168,9 @@ const SuratJalanScreen = ({navigation}) => {
             setKeterangan('');
             setItems([]);
             setScannedValue('');
+            setDate(new Date());
+            setIsLowStockMode(false);
+            setScanMode('packing');
           },
           style: 'destructive',
         },
@@ -255,48 +295,61 @@ const SuratJalanScreen = ({navigation}) => {
     setScannedValue('');
     setIsScanning(true);
 
+    const itemIndex = items.findIndex(item => item.barcode === barcode);
+
+    const updateAndReorder = (currentItem, isNew = false) => {
+      currentItem.jumlahScan = (currentItem.jumlahScan || 0) + 1;
+      currentItem.qty = (currentItem.qty || 0) + 1; // Jaga konsistensi
+
+      // --- INI LOGIKA REORDERNYA ---
+      if (isNew) {
+        // Jika item baru, tambahkan ke paling atas
+        setItems(prevItems => [currentItem, ...prevItems]);
+      } else {
+        // Jika item lama, cabut dari posisi lama, pindah ke atas
+        setItems(prevItems => {
+          const otherItems = prevItems.filter(i => i.barcode !== barcode);
+          return [currentItem, ...otherItems];
+        });
+      }
+      setLastScannedBarcode(barcode);
+      playSound('success');
+    };
+
     // Cek apakah kita sedang dalam mode "Validated Scan" (sudah pilih No. Permintaan)
     // atau mode "Free Scan" (belum pilih No. Permintaan)
-    if (permintaan) {
-      // --- MODE 2: VALIDATED SCAN ---
-      const itemIndex = items.findIndex(item => item.barcode === barcode);
-      if (itemIndex > -1) {
-        const newItems = [...items];
-        const currentItem = newItems[itemIndex];
+    if (itemIndex > -1) {
+      // --- ITEM DITEMUKAN (SUKSES) ---
+      const currentItem = {...items[itemIndex]};
+      updateAndReorder(currentItem);
+    } else {
+      // --- ITEM TIDAK DITEMUKAN (ITEM BARU) ---
 
-        currentItem.jumlahScan += 1;
-        setItems(newItems);
-        playSound('success');
-      } else {
+      // -> 4. TAMBAHKAN VALIDASI DI SINI
+      // Jika ada No. Permintaan ATAU sedang dalam Low Stock Mode, tolak barang asing.
+      if (permintaan || isLowStockMode) {
         Toast.show({
           type: 'error',
-          text1: 'Error',
-          text2: 'Barcode tidak ada di daftar permintaan ini.',
+          text1: 'Item Ditolak',
+          text2: 'Barang ini tidak ada dalam daftar yang harus dikirim.',
         });
         playSound('error');
-      }
-    } else {
-      // --- MODE 3: FREE SCAN (SCAN SATU PER SATU) ---
-      const existingItemIndex = items.findIndex(
-        item => item.barcode === barcode,
-      );
-      if (existingItemIndex > -1) {
-        const newItems = [...items];
-        newItems[existingItemIndex].jumlahScan += 1;
-        setItems(newItems);
-        playSound('success');
       } else {
+        // Jika mode Free Scan biasa, baru boleh tambah
         try {
           const gudang = userInfo.cabang;
           const response = await validateBarcodeApi(barcode, gudang, userToken);
           const product = response.data.data;
+
           const newItem = {
             ...product,
-            jumlahKirim: product.stok, // Anggap saja batas kirim adalah stok
-            jumlahScan: 1,
+            jumlahKirim: 0,
+            jumlahScan: 0,
+            qty: 0,
+            stok: product.stok || 0,
           };
-          setItems(prevItems => [newItem, ...prevItems]);
-          playSound('success');
+
+          updateAndReorder(newItem, true);
         } catch (error) {
           Toast.show({
             type: 'error',
@@ -333,6 +386,8 @@ const SuratJalanScreen = ({navigation}) => {
             ...item,
             jumlahKirim: item.minta - item.sudah,
             jumlahScan: 0,
+            qty: 0,
+            stok: item.stok || 0,
           }))
           .filter(item => item.jumlahKirim > 0),
       );
@@ -384,7 +439,7 @@ const SuratJalanScreen = ({navigation}) => {
               const payload = {
                 isNew: true,
                 header: {
-                  tanggal: new Date().toISOString().split('T')[0],
+                  tanggal: date.toISOString().split('T')[0],
                   gudang: {kode: userInfo.cabang},
                   store: {kode: store.kode},
                   keterangan: keterangan,
@@ -422,9 +477,34 @@ const SuratJalanScreen = ({navigation}) => {
 
   const renderItem = useCallback(
     ({item}) => {
+      // 1. Tentukan Quantity yang akan ditampilkan
+      const currentQty = item.jumlahScan || item.qty || 0;
+
+      // 2. LOGIKA HIGHLIGHT (Warna Background)
+      let itemStyle = styles.itemContainer;
+
+      // Prioritas 1: Baru saja di-scan (Hijau Terang)
+      if (item.barcode === lastScannedBarcode) {
+        itemStyle = [styles.itemContainer, styles.itemLastScanned];
+      }
+      // Prioritas 2: Sudah selesai/match (Khusus mode permintaan)
+      else if (
+        permintaan &&
+        currentQty === item.jumlahKirim &&
+        currentQty > 0
+      ) {
+        itemStyle = [styles.itemContainer, styles.itemMatched];
+      }
+      // Prioritas 3: Sudah ada isinya (Kuning/Hijau Tipis)
+      else if (currentQty > 0) {
+        itemStyle = [styles.itemContainer, styles.itemHasQty];
+      }
+
+      // 3. RENDER TAMPILAN BERDASARKAN MODE
       if (scanMode === 'packing') {
+        // --- BLOK YANG KEMARIN HILANG (DIKEMBALIKAN) ---
         return (
-          <View style={styles.itemContainer}>
+          <View style={itemStyle}>
             <View style={styles.itemInfo}>
               <Text style={styles.itemName} numberOfLines={2}>
                 {item.nama}
@@ -438,56 +518,55 @@ const SuratJalanScreen = ({navigation}) => {
         );
       }
 
-      // Render untuk mode 'permintaan'
+      // --- Render untuk mode 'permintaan' atau 'free scan' ---
       return (
-        <View
-          style={[
-            styles.itemContainer,
-            item.jumlahScan === item.jumlahKirim &&
-              item.jumlahScan > 0 &&
-              styles.itemMatched,
-          ]}>
+        <View style={itemStyle}>
           <View style={styles.itemInfo}>
             <Text style={styles.itemName} numberOfLines={2}>
               {item.nama}
             </Text>
             <Text style={styles.itemDetails}>
-              Size: {item.ukuran} | Stok: {item.stok} | Barcode: {item.barcode}
+              Size: {item.ukuran} | Stok: {item.stok || 0} | Barcode:{' '}
+              {item.barcode}
             </Text>
           </View>
+
           <View style={styles.qtyContainer}>
+            {/* Tampilkan 'Minta' hanya jika ada Permintaan */}
             {permintaan && (
               <Text style={styles.qtyLabel}>Minta: {item.jumlahKirim}</Text>
             )}
 
+            {/* Kontrol Qty dengan Tombol Minus */}
             <View style={styles.qtyControl}>
               <TouchableOpacity
                 onPress={() => handleDecreaseQty(item.barcode)}
                 style={styles.qtyButton}>
                 <Icon name="minus-circle" size={24} color="#D32F2F" />
               </TouchableOpacity>
-              <Text style={styles.qtyValue}>{item.jumlahScan}</Text>
+              <Text style={styles.qtyValue}>{currentQty}</Text>
             </View>
 
+            {/* Tampilkan 'Selisih' hanya jika ada Permintaan */}
             {permintaan && (
               <Text
                 style={[
                   styles.qtyLabel,
                   {
                     color:
-                      item.jumlahKirim - item.jumlahScan !== 0
+                      item.jumlahKirim - currentQty !== 0
                         ? '#D32F2F'
                         : '#4CAF50',
                   },
                 ]}>
-                Selisih: {item.jumlahKirim - item.jumlahScan}
+                Selisih: {item.jumlahKirim - currentQty}
               </Text>
             )}
           </View>
         </View>
       );
     },
-    [scanMode, permintaan, handleDecreaseQty],
+    [scanMode, permintaan, handleDecreaseQty, lastScannedBarcode],
   );
 
   return (
@@ -532,24 +611,69 @@ const SuratJalanScreen = ({navigation}) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.container}>
         <View style={styles.headerFormContainer}>
+          <View style={{marginBottom: 10}}>
+            <Text style={styles.label}>Tanggal Surat Jalan</Text>
+            <TouchableOpacity
+              style={styles.dateInput}
+              onPress={() => setOpenDatePicker(true)}>
+              <Icon
+                name="calendar"
+                size={20}
+                color="#757575"
+                style={{marginRight: 10}}
+              />
+              <Text style={styles.dateText}>
+                {date.toLocaleDateString('id-ID', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              </Text>
+            </TouchableOpacity>
+          </View>
           {/* Kita bungkus dalam satu baris */}
           <View style={styles.rowContainer}>
             {/* Blok 1: Pilih Store */}
             <View style={styles.inputBlock}>
               <Text style={styles.label}>Tujuan Pengiriman</Text>
               <TouchableOpacity
-                style={styles.lookupButton}
-                onPress={() => setStoreModalVisible(true)}>
+                style={[
+                  styles.lookupButton,
+                  isLowStockMode && styles.lookupButtonDisabled,
+                ]}
+                onPress={() => setStoreModalVisible(true)}
+                disabled={isLowStockMode} // -> Dikunci saat Low Stock Mode
+              >
                 <Icon
                   name="home"
                   size={20}
                   color={store ? '#D32F2F' : '#757575'}
                 />
-                <Text style={styles.lookupText} numberOfLines={1}>
+                <Text
+                  style={[
+                    styles.lookupText,
+                    store && styles.lookupTextSelected,
+                  ]}
+                  numberOfLines={1}>
                   {store ? store.nama : 'Pilih Store...'}
                 </Text>
               </TouchableOpacity>
             </View>
+            <DatePicker
+              modal
+              open={openDatePicker}
+              date={date}
+              mode="date"
+              minimumDate={new Date()}
+              onConfirm={date => {
+                setOpenDatePicker(false);
+                setDate(date);
+              }}
+              onCancel={() => {
+                setOpenDatePicker(false);
+              }}
+            />
             {/* Blok 2: Keterangan */}
             <View style={styles.inputBlock}>
               <Text style={styles.label}>Keterangan</Text>
@@ -571,40 +695,43 @@ const SuratJalanScreen = ({navigation}) => {
           style={styles.list}
           ListHeaderComponent={
             <View style={styles.scanSection}>
-              <View style={styles.modeSelectorContainer}>
-                <TouchableOpacity
-                  style={[
-                    styles.modeButton,
-                    scanMode === 'packing' && styles.modeButtonActive,
-                  ]}
-                  onPress={() => handleChangeMode('packing')}>
-                  <Text
+              {!isLowStockMode && (
+                <View style={styles.modeSelectorContainer}>
+                  <TouchableOpacity
                     style={[
-                      styles.modeButtonText,
-                      scanMode === 'packing' && styles.modeButtonTextActive,
-                    ]}>
-                    Scan Packing
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.modeButton,
-                    scanMode === 'permintaan' && styles.modeButtonActive,
-                  ]}
-                  onPress={() => handleChangeMode('permintaan')}>
-                  <Text
+                      styles.modeButton,
+                      scanMode === 'packing' && styles.modeButtonActive,
+                    ]}
+                    onPress={() => handleChangeMode('packing')}>
+                    <Text
+                      style={[
+                        styles.modeButtonText,
+                        scanMode === 'packing' && styles.modeButtonTextActive,
+                      ]}>
+                      Scan Packing
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
                     style={[
-                      styles.modeButtonText,
-                      scanMode === 'permintaan' && styles.modeButtonTextActive,
-                    ]}>
-                    Load Permintaan
-                  </Text>
-                </TouchableOpacity>
-              </View>
+                      styles.modeButton,
+                      scanMode === 'permintaan' && styles.modeButtonActive,
+                    ]}
+                    onPress={() => handleChangeMode('permintaan')}>
+                    <Text
+                      style={[
+                        styles.modeButtonText,
+                        scanMode === 'permintaan' &&
+                          styles.modeButtonTextActive,
+                      ]}>
+                      Scan Barang
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               <View style={styles.rowContainer}>
-                {/* Blok 1: Pilih Permintaan (jika mode permintaan) */}
-                {scanMode === 'permintaan' && (
+                {/* --- SEMBUNYIKAN TOMBOL PERMINTAAN JIKA LOW STOCK MODE --- */}
+                {scanMode === 'permintaan' && !isLowStockMode && (
                   <View style={styles.inputBlock}>
                     <Text style={styles.label}>Nomor Permintaan</Text>
                     <TouchableOpacity
@@ -736,69 +863,58 @@ const styles = StyleSheet.create({
   rowContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 10, // Jarak antar elemen
+    gap: 10,
   },
-  inputBlock: {
-    flex: 1, // Bagi ruang secara merata
-  },
-  inputBlockFullWidth: {
-    flex: 2, // Buat satu blok ini jadi lebar penuh
-  },
-  label: {
-    fontSize: 12,
-    color: '#616161',
-    marginBottom: 4,
-    paddingLeft: 4,
-  },
+  inputBlock: {flex: 1},
+  inputBlockFullWidth: {flex: 2},
+  label: {fontSize: 12, color: '#616161', marginBottom: 4, paddingLeft: 4},
 
-  // --- PERUBAHAN DI SINI ---
+  dateInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F4F6F8',
+    height: 44,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    marginBottom: 10,
+    gap: 10,
+  },
+  dateText: {fontSize: 14, color: '#212121', fontWeight: '500'},
+
   lookupButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F4F6F8',
-    height: 44, // -> Diperkecil dari 48
+    height: 44,
     borderRadius: 8,
     paddingHorizontal: 10,
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    // marginBottom: 10, // -> Jarak antar elemen diperkecil
   },
-  lookupButtonDisabled: {
-    backgroundColor: '#E0E0E0',
-  },
-  lookupText: {
-    flex: 1,
-    fontSize: 14, // -> Diperkecil dari 16
-    marginHorizontal: 8,
-    color: '#757575',
-  },
-  lookupTextSelected: {
-    color: '#212121',
-    fontWeight: '600',
-  },
+  lookupButtonDisabled: {backgroundColor: '#E0E0E0'},
+  lookupText: {flex: 1, fontSize: 14, marginHorizontal: 8, color: '#757575'},
+  lookupTextSelected: {color: '#212121', fontWeight: '600'},
+
   input: {
-    height: 44, // -> Diperkecil dari 48
+    height: 44,
     borderWidth: 1,
     borderColor: '#ccc',
     borderRadius: 8,
     paddingHorizontal: 12,
     backgroundColor: '#fff',
-    fontSize: 14, // -> Diperkecil dari 16
+    fontSize: 14,
     color: '#212121',
   },
-  // --- AKHIR PERUBAHAN ---
 
   list: {flex: 1},
-  scanSection: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    marginBottom: 10,
-  },
+  scanSection: {paddingHorizontal: 16, paddingTop: 16, marginBottom: 10},
   modeSelectorContainer: {
     flexDirection: 'row',
     backgroundColor: '#E0E0E0',
     borderRadius: 8,
-    marginBottom: 12, // -> Jarak diperkecil
+    marginBottom: 12,
   },
   modeButton: {flex: 1, padding: 10, alignItems: 'center', borderRadius: 6},
   modeButtonActive: {
@@ -812,15 +928,6 @@ const styles = StyleSheet.create({
   modeButtonText: {fontWeight: '600', color: '#616161'},
   modeButtonTextActive: {color: '#D32F2F'},
 
-  instructionText: {
-    fontSize: 12,
-    color: '#757575',
-    textAlign: 'center',
-    marginBottom: 10,
-    fontStyle: 'italic',
-  },
-
-  // --- PERUBAHAN DI SINI ---
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -828,27 +935,26 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    height: 44, // -> Tambahkan tinggi tetap
+    height: 44,
   },
-  inputIcon: {
-    paddingLeft: 12,
-  },
+  inputIcon: {paddingLeft: 12},
   scanInput: {
     flex: 1,
-    height: 44, // -> Diperkecil dari 50
-    fontSize: 14, // -> Diperkecil dari 16
-    paddingHorizontal: 12,
+    height: 44,
+    fontSize: 14,
+    paddingHorizontal: 10,
     color: '#1A202C',
   },
+
   listTitle: {
-    fontSize: 16, // -> Diperkecil dari 18
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
-    marginTop: 16, // -> Jarak diperkecil
+    marginTop: 16,
     marginBottom: 10,
   },
-  // --- AKHIR PERUBAHAN ---
 
+  // STYLE UNTUK ITEM YANG LEBIH RAPI & HIGHLIGHT
   itemContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -859,28 +965,37 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee',
   },
   itemMatched: {backgroundColor: '#E8F5E9'},
+  itemHasQty: {backgroundColor: '#F1F8E9'},
+  itemLastScanned: {
+    backgroundColor: '#DCEDC8',
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+
   itemInfo: {flex: 1, marginRight: 10},
   itemName: {fontSize: 16, fontWeight: '600', color: '#212121'},
   itemDetails: {color: '#666', marginTop: 4},
-  qtyContainer: {alignItems: 'flex-end', minWidth: 80},
-  qtyLabel: {color: '#888', fontSize: 12},
+
+  qtyContainer: {alignItems: 'flex-end', minWidth: 100},
+  qtyLabel: {color: '#888', fontSize: 12, marginBottom: 4},
+  qtyControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginBottom: 4,
+    gap: 8,
+  },
+  qtyButton: {padding: 4},
   qtyValue: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#212121',
     minWidth: 30,
     textAlign: 'center',
   },
-  qtyControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 8,
-  },
-  qtyButton: {padding: 2},
+
   emptyText: {textAlign: 'center', marginTop: 40, color: '#999', fontSize: 16},
 
-  // --- PERUBAHAN DI SINI ---
   footerContainer: {
     padding: 16,
     paddingTop: 10, // -> Padding atas diperkecil
@@ -911,11 +1026,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 12,
   },
-  // --- AKHIR PERUBAHAN ---
-
   buttonText: {color: '#fff', fontWeight: 'bold', fontSize: 16},
   itemKode: {fontWeight: 'bold', color: '#212121'},
   itemNama: {color: '#757575'},
 });
-
 export default SuratJalanScreen;
