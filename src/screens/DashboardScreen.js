@@ -10,20 +10,57 @@ import {
 import {AuthContext} from '../context/AuthContext';
 import Icon from 'react-native-vector-icons/Feather';
 
+// 1. IMPORT SCREEN MANAGEMENT
+// Pastikan path ini sesuai dengan struktur folder kamu
+import ManagementDashboardScreen from './ManagementDashboardScreen';
+
 const DashboardScreen = ({navigation}) => {
   const {logout, userInfo} = useContext(AuthContext);
 
+  // --- LOGIKA USER KHUSUS (DARUL, HARIS, ESTU @ KDC) ---
+  // --- LOGIKA USER KHUSUS (DARUL, HARIS, ESTU @ KDC) ---
+  const isSpecialUser = React.useMemo(() => {
+    // 1. Pastikan userInfo ada
+    if (!userInfo || !userInfo.nama || !userInfo.cabang) return false;
+
+    // 2. Debugging (Lihat di terminal Metro Bundler apa isi userInfo sebenarnya)
+    // console.log('DEBUG USER:', userInfo.nama, userInfo.cabang);
+
+    const userBranch = userInfo.cabang;
+    const userName = userInfo.nama.toUpperCase(); // Ubah ke huruf besar semua
+
+    // 3. Cek Cabang
+    if (userBranch !== 'KDC') return false;
+
+    // 4. Cek Nama (Gunakan INCLUDES agar 'M. HARIS' atau 'HARIS K' tetap terdeteksi)
+    const allowedNames = ['DARUL', 'HARIS', 'ESTU'];
+
+    // Cek apakah salah satu nama yang diperbolehkan ADA di dalam userName
+    return allowedNames.some(name => userName.includes(name));
+  }, [userInfo]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
+      // Opsional: Jika tampilan Management sudah punya header sendiri yang bagus,
+      // kamu bisa menyembunyikan header default navigasi dengan: headerShown: !isSpecialUser,
+      // Tapi pastikan tombol Logout dipindahkan ke dalam ManagementDashboardScreen jika header disembunyikan.
+
       headerRight: () => (
         <TouchableOpacity onPress={logout} style={{marginRight: 15}}>
           <Icon name="log-out" size={24} color="#D32F2F" />
         </TouchableOpacity>
       ),
     });
-  }, [navigation, logout]);
+  }, [navigation, logout, isSpecialUser]);
 
-  // --- Definisikan SEMUA kemungkinan menu di sini ---
+  // --- 2. JIKA USER KHUSUS, TAMPILKAN MANAGEMENT DASHBOARD ---
+  if (isSpecialUser) {
+    return <ManagementDashboardScreen navigation={navigation} />;
+  }
+
+  // --- 3. JIKA USER BIASA, TAMPILKAN MENU GRID (KODE LAMA) ---
+
+  // Definisikan menu user biasa
   const allMenus = [
     {
       title: 'Packing',
@@ -38,7 +75,6 @@ const DashboardScreen = ({navigation}) => {
       allowed: userInfo?.cabang === 'P04',
     },
     {
-      // -> Tambahkan Menu Baru di sini
       title: 'Checker',
       iconName: 'check-square',
       onPress: () => navigation.navigate('Checker'),
@@ -47,32 +83,43 @@ const DashboardScreen = ({navigation}) => {
         userInfo?.cabang === 'KDC' ||
         userInfo?.cabang === 'KBS',
     },
+    // {
+    //   title: 'Surat Jalan',
+    //   iconName: 'truck',
+    //   onPress: () => navigation.navigate('SuratJalan'),
+    //   allowed: userInfo?.cabang === 'KDC' || userInfo?.cabang === 'KBS',
+    // },
     {
-      title: 'Surat Jalan',
-      iconName: 'truck',
-      onPress: () => navigation.navigate('SuratJalan'),
+      title: 'Packing List', // Ganti judul
+      iconName: 'package', // Ganti icon jika perlu (misal: package / truck)
+      onPress: () => navigation.navigate('PackingList'), // Pastikan nama route di App.js disesuaikan
       allowed: userInfo?.cabang === 'KDC' || userInfo?.cabang === 'KBS',
     },
     {
       title: 'Stok Menipis',
       iconName: 'trending-down',
       onPress: () => navigation.navigate('LowStock'),
-      // UBAH ALLOWED: KDC, KBS, DAN semua Store (yang berawalan K, bukan P04)
       allowed:
         userInfo?.cabang === 'KDC' ||
         userInfo?.cabang === 'KBS' ||
-        (userInfo?.cabang.startsWith('K') && userInfo?.cabang !== 'P04'),
+        (userInfo?.cabang?.startsWith('K') && userInfo?.cabang !== 'P04'),
     },
     {
-      title: 'Riwayat SJ', // -> Menu Baru
+      title: 'Riwayat SJ',
       iconName: 'archive',
       onPress: () => navigation.navigate('RiwayatSuratJalan'),
       allowed: userInfo?.cabang === 'KDC' || userInfo?.cabang === 'KBS',
     },
     {
+      title: 'Stok Opname',
+      iconName: 'clipboard',
+      onPress: () => navigation.navigate('StokOpname'),
+      allowed: userInfo?.kode === 'RIO' && userInfo?.cabang === 'KDC',
+      color: '#FF9800',
+    },
+    {
       title: 'Penjualan Langsung',
       iconName: 'shopping-bag',
-      // UBAH DARI 'PenjualanLangsung' MENJADI 'PenjualanList'
       onPress: () => navigation.navigate('PenjualanList'),
       allowed:
         userInfo?.cabang?.startsWith('K') &&
@@ -84,7 +131,7 @@ const DashboardScreen = ({navigation}) => {
       iconName: 'inbox',
       onPress: () => navigation.navigate('TerimaSj'),
       allowed:
-        userInfo?.cabang.startsWith('K') &&
+        userInfo?.cabang?.startsWith('K') &&
         userInfo?.cabang !== 'KDC' &&
         userInfo?.cabang !== 'KBS',
     },
@@ -93,7 +140,7 @@ const DashboardScreen = ({navigation}) => {
       iconName: 'rotate-ccw',
       onPress: () => navigation.navigate('ReturAdmin'),
       allowed:
-        userInfo?.cabang.startsWith('K') &&
+        userInfo?.cabang?.startsWith('K') &&
         userInfo?.cabang !== 'KDC' &&
         userInfo?.cabang !== 'KBS',
     },
@@ -102,7 +149,7 @@ const DashboardScreen = ({navigation}) => {
       iconName: 'send',
       onPress: () => navigation.navigate('MutasiStore'),
       allowed:
-        userInfo?.cabang.startsWith('K') &&
+        userInfo?.cabang?.startsWith('K') &&
         userInfo?.cabang !== 'KDC' &&
         userInfo?.cabang !== 'KBS',
     },
@@ -111,27 +158,25 @@ const DashboardScreen = ({navigation}) => {
       iconName: 'corner-down-left',
       onPress: () => navigation.navigate('MutasiTerima'),
       allowed:
-        userInfo?.cabang.startsWith('K') &&
+        userInfo?.cabang?.startsWith('K') &&
         userInfo?.cabang !== 'KDC' &&
         userInfo?.cabang !== 'KBS',
     },
     {
       title: 'Minta Barang',
-      iconName: 'shopping-cart', // Pastikan ikon ini ada di Feather icons
+      iconName: 'shopping-cart',
       onPress: () => navigation.navigate('MintaBarang'),
-      // LOGIKA: Tampilkan HANYA jika cabang berawalan 'K' DAN BUKAN KDC/KBS
       allowed:
         userInfo?.cabang?.startsWith('K') &&
         userInfo?.cabang !== 'KDC' &&
         userInfo?.cabang !== 'KBS',
     },
     {
-      // -> Menu Baru
       title: 'Laporan Pending',
       iconName: 'alert-triangle',
       onPress: () => navigation.navigate('LaporanPending'),
       allowed:
-        userInfo?.cabang.startsWith('K') &&
+        userInfo?.cabang?.startsWith('K') &&
         userInfo?.cabang !== 'KDC' &&
         userInfo?.cabang !== 'KBS',
     },
@@ -139,7 +184,7 @@ const DashboardScreen = ({navigation}) => {
       title: 'Tautkan WhatsApp',
       iconName: 'smartphone',
       onPress: () => navigation.navigate('LinkWhatsapp'),
-      allowed: userInfo?.cabang.startsWith('K'),
+      allowed: userInfo?.cabang?.startsWith('K'),
     },
   ];
 
@@ -161,7 +206,6 @@ const DashboardScreen = ({navigation}) => {
 
       <Text style={styles.sectionTitle}>Menu Utama</Text>
       <View style={styles.gridContainer}>
-        {/* Loop melalui array menu dan render sesuai kondisi */}
         {allMenus
           .filter(menu => menu.allowed)
           .map((menu, index) => (
@@ -230,7 +274,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     elevation: 3,
   },
-  gridItemHidden: {width: '48%', aspectRatio: 1.2, marginBottom: 16}, // Placeholder
   gridText: {marginTop: 12, fontSize: 16, fontWeight: '600', color: '#212121'},
 });
 

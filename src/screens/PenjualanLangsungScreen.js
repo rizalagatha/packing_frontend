@@ -11,6 +11,11 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
+  BackHandler,
+  LayoutAnimation, // 1. Import LayoutAnimation
+  UIManager, // 2. Import UIManager
+  Vibration, // 3. Import Vibration
 } from 'react-native';
 import {AuthContext} from '../context/AuthContext';
 import StrukModal from '../components/StrukModal';
@@ -27,6 +32,14 @@ import SearchModal from '../components/SearchModal';
 import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
 import SoundPlayer from 'react-native-sound-player';
+
+// Aktifkan LayoutAnimation di Android
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const PenjualanLangsungScreen = ({navigation}) => {
   const {userToken} = useContext(AuthContext);
@@ -67,11 +80,14 @@ const PenjualanLangsungScreen = ({navigation}) => {
     );
     const totalDiskonFaktur = diskonFaktur; // Ambil dari state
 
+    const totalPcs = items.reduce((sum, item) => sum + item.jumlah, 0);
+
     return {
       subTotal,
       totalDiskon: totalDiskonItem,
       totalDiskonFaktur,
       grandTotal: subTotal - totalDiskonItem - totalDiskonFaktur,
+      totalPcs,
     };
   }, [items, diskonFaktur]);
 
@@ -80,10 +96,19 @@ const PenjualanLangsungScreen = ({navigation}) => {
     return Math.max(bayar - totals.grandTotal, 0);
   }, [tunai, transfer, totals.grandTotal]);
 
-  const playSound = type => {
+  // Helper Audio & Haptic
+  const playFeedback = type => {
     try {
+      // Audio
       const soundName = type === 'success' ? 'beep_success' : 'beep_error';
       SoundPlayer.playSoundFile(soundName, 'mp3');
+
+      // Haptic (Getar)
+      if (type === 'success') {
+        Vibration.vibrate(50); // Getar pendek
+      } else {
+        Vibration.vibrate([0, 100, 50, 100]); // Getar panjang/pola error
+      }
     } catch (e) {
       console.log('audio err');
     }
@@ -108,6 +133,30 @@ const PenjualanLangsungScreen = ({navigation}) => {
     initData();
   }, [userToken]);
 
+  // --- 1. PREVENT BACK BUTTON (Agar keranjang tidak hilang tak sengaja) ---
+  useEffect(() => {
+    const backAction = () => {
+      if (items.length > 0) {
+        Alert.alert(
+          'Peringatan',
+          'Keranjang belanja masih ada isi. Yakin ingin keluar? Data akan hilang.',
+          [
+            {text: 'Batal', onPress: () => null, style: 'cancel'},
+            {text: 'Ya, Keluar', onPress: () => navigation.goBack()},
+          ],
+        );
+        return true; // Mencegah aksi back default
+      }
+      return false; // Biarkan back default jika keranjang kosong
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      backAction,
+    );
+    return () => backHandler.remove();
+  }, [items, navigation]);
+
   // 2. Logic Scan
   const handleScan = async () => {
     if (!scannedValue) return;
@@ -115,55 +164,152 @@ const PenjualanLangsungScreen = ({navigation}) => {
     setScannedValue('');
 
     const existingIndex = items.findIndex(i => i.barcode === barcode);
+
+    // KASUS 1: BARANG SUDAH ADA DI KERANJANG
     if (existingIndex > -1) {
+      const currentItem = items[existingIndex];
+      const newQty = currentItem.jumlah + 1;
+
+      // Cek Stok Minus (SOP: Konfirmasi, bukan Blokir)
+      if (newQty > currentItem.stok) {
+        playFeedback('error'); // Bunyi error sebagai peringatan
+        Alert.alert(
+          'Peringatan Stok Minus',
+          `Stok sistem hanya ${currentItem.stok}. Barang fisik ada?\n\nLanjutkan input menjadi ${newQty}?`,
+          [
+            {text: 'Batal', style: 'cancel'},
+            {
+              text: 'Ya, Lanjut',
+              onPress: () => {
+                // Update Qty walau stok kurang
+                setItems(prev => {
+                  const newItems = [...prev];
+                  newItems[existingIndex].jumlah = newQty;
+                  return newItems;
+                });
+                playFeedback('success'); // Bunyi sukses setelah konfirmasi
+              },
+            },
+          ],
+        );
+        return; // Stop di sini, tunggu user klik Alert
+      }
+
+      // Jika stok aman, langsung update
       setItems(prev => {
         const newItems = [...prev];
-        newItems[existingIndex].jumlah += 1;
+        newItems[existingIndex].jumlah = newQty;
         return newItems;
       });
-      playSound('success');
-    } else {
+      playFeedback('success');
+    }
+
+    // KASUS 2: BARANG BARU DISCAN
+    else {
       setIsLoading(true);
       try {
         const response = await scanProdukPenjualanApi(barcode, userToken);
         const product = response.data.data;
         const finalPrice = Number(product.harga || 0);
 
-        const newItem = {
-          kode: product.kode,
-          nama: product.nama,
-          ukuran: product.ukuran,
-          barcode: product.barcode,
-          harga: finalPrice,
-          jumlah: 1,
-          diskonRp: 0,
-          stok: product.stok,
-          kategori: product.kategori || '', // Penting untuk cek promo
-        };
+        // Cek Stok Awal (Jika stok 0 saat scan pertama)
+        if (product.stok <= 0) {
+          playFeedback('error');
+          // Tanya user dulu
+          Alert.alert(
+            'Stok Kosong (0)',
+            `Barang "${product.nama}" stok di sistem 0.\nApakah barang fisik ada dan ingin dijual?`,
+            [
+              {
+                text: 'Batal',
+                style: 'cancel',
+                onPress: () => setIsLoading(false),
+              },
+              {
+                text: 'Ya, Jual',
+                onPress: () => {
+                  // Tambahkan item meski stok 0
+                  addItemToCart(product, finalPrice);
+                  playFeedback('success');
+                  setIsLoading(false);
+                },
+              },
+            ],
+          );
+          return; // Tunggu konfirmasi
+        }
 
-        setItems(prev => [newItem, ...prev]);
-        playSound('success');
+        // Stok aman > 0
+        addItemToCart(product, finalPrice);
+        playFeedback('success');
       } catch (error) {
-        playSound('error');
+        playFeedback('error');
         Toast.show({
           type: 'error',
           text1: 'Gagal',
           text2: 'Barcode tidak ditemukan',
         });
       } finally {
-        setIsLoading(false);
+        // Loading dimatikan di dalam blok if/else di atas atau saat catch
+        if (items.findIndex(i => i.barcode === barcode) === -1)
+          setIsLoading(false);
       }
     }
     setTimeout(() => scannerInputRef.current?.focus(), 100);
   };
 
+  // Helper kecil untuk menambah item (agar tidak duplikat kode)
+  const addItemToCart = (product, finalPrice) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
+    const newItem = {
+      kode: product.kode,
+      nama: product.nama,
+      ukuran: product.ukuran,
+      barcode: product.barcode,
+      harga: finalPrice,
+      jumlah: 1,
+      diskonRp: 0,
+      stok: product.stok,
+      kategori: product.kategori || '',
+    };
+    setItems(prev => [newItem, ...prev]);
+  };
+
   const handleQtyChange = (index, delta) => {
+    // Ambil item target
+    const targetItem = items[index];
+    const newQty = targetItem.jumlah + delta;
+
+    // Jika user menambah qty (+) DAN melebihi stok
+    if (delta > 0 && newQty > targetItem.stok) {
+      Alert.alert(
+        'Konfirmasi Stok Minus',
+        `Stok sistem: ${targetItem.stok}\nPermintaan: ${newQty}\n\nLanjutkan transaksi stok minus?`,
+        [
+          {text: 'Batal', style: 'cancel'},
+          {
+            text: 'Ya',
+            onPress: () => updateQtyState(index, newQty),
+          },
+        ],
+      );
+      return; // Stop, tunggu konfirmasi
+    }
+
+    // Jika normal (kurang atau stok cukup)
+    updateQtyState(index, newQty);
+  };
+
+  // Helper Update State
+  const updateQtyState = (index, newQty) => {
+    // Getar halus saat tekan tombol
+    Vibration.vibrate(10);
     setItems(prev =>
       prev
         .map((item, i) => {
           if (i === index) {
-            const newQty = Math.max(0, item.jumlah + delta);
-            return {...item, jumlah: newQty};
+            const val = Math.max(0, newQty);
+            return {...item, jumlah: val};
           }
           return item;
         })
@@ -358,65 +504,151 @@ const PenjualanLangsungScreen = ({navigation}) => {
     }
   };
 
-  const handleSendWa = async () => {
-    if (!strukData?.header?.inv_mem_hp && !customer?.telp) {
-      return Toast.show({
-        type: 'error',
-        text1: 'Gagal',
-        text2: 'No HP tidak tersedia.',
-      });
+  // Fungsi ini dipanggil oleh StrukModal
+  const handleSendWa = async manualHp => {
+    console.log('--- [FRONTEND - SCREEN] START KIRIM WA ---');
+
+    // 1. Bersihkan Format Nomor
+    let targetHp = String(manualHp || '').trim();
+    targetHp = targetHp.replace(/[^0-9]/g, ''); // Hapus spasi, strip, dll
+
+    // Format ke 62...
+    if (targetHp.startsWith('0')) {
+      targetHp = '62' + targetHp.slice(1);
+    } else if (!targetHp.startsWith('62')) {
+      targetHp = '62' + targetHp;
     }
 
-    // Prioritas: HP Member -> HP Customer
-    const targetHp = strukData.header.inv_mem_hp || customer.telp;
+    console.log('[FRONTEND - SCREEN] Nomor Final ke API:', targetHp);
 
     try {
-      await sendStrukWaApi(
+      // 2. Panggil API
+      const response = await sendStrukWaApi(
         {
           nomor: strukData.header.inv_nomor,
           hp: targetHp,
         },
         userToken,
       );
-      Toast.show({
-        type: 'success',
-        text1: 'Terkirim',
-        text2: 'Struk dikirim ke WA.',
-      });
+
+      console.log('[FRONTEND - SCREEN] Sukses:', response.data);
+
+      // 3. TAMPILKAN ALERT SUKSES (Bukan Toast)
+      // Alert akan muncul di atas Modal
+      Alert.alert('Berhasil', 'Struk sedang dikirim ke WhatsApp.');
     } catch (error) {
-      Toast.show({type: 'error', text1: 'Gagal', text2: 'Gagal mengirim WA.'});
+      console.log('[FRONTEND - SCREEN] Error API:', error);
+
+      let pesanError = 'Gagal mengirim pesan.';
+
+      // Cek respon error dari Backend (misal: "Nomor tidak terdaftar")
+      if (error.response && error.response.data) {
+        console.log(
+          '[FRONTEND - SCREEN] Detail Error Backend:',
+          error.response.data,
+        );
+        pesanError = error.response.data.message || pesanError;
+      }
+
+      // 4. TAMPILKAN ALERT ERROR (Bukan Toast)
+      // Alert akan muncul di atas Modal, jadi user bisa baca
+      Alert.alert('Gagal Kirim', pesanError);
     }
   };
 
-  const renderItem = ({item, index}) => (
-    <View style={styles.itemContainer}>
-      <View style={styles.itemInfo}>
-        <Text style={styles.itemName} numberOfLines={2}>
-          {item.nama}
-        </Text>
-        <Text style={styles.itemDetails}>
-          {item.ukuran} | @{item.harga.toLocaleString('id-ID')} | Stok:{' '}
-          {item.stok}
-        </Text>
-      </View>
-      <View style={styles.itemRight}>
-        <Text style={styles.totalItem}>
-          Rp {(item.harga * item.jumlah).toLocaleString('id-ID')}
-        </Text>
-        <View style={styles.qtyControl}>
+  // Fungsi Hapus Item
+  const handleRemoveItem = index => {
+    Alert.alert('Hapus Item', 'Yakin hapus barang ini dari keranjang?', [
+      {text: 'Batal', style: 'cancel'},
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: () => {
+          // ANIMASI ITEM KELUAR
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          Vibration.vibrate(50);
+          setItems(prev => prev.filter((_, i) => i !== index));
+        },
+      },
+    ]);
+  };
+
+  const renderItem = ({item, index}) => {
+    // Cek Stok Kritis
+    const isStokLow = item.stok <= 5;
+    const isStokMinus = item.jumlah > item.stok;
+
+    // WAJIB PAKAI 'return' KARENA ADA LOGIKA DI ATASNYA
+    return (
+      <View
+        style={[
+          styles.itemContainer,
+          isStokMinus && {backgroundColor: '#FFF5F5'},
+        ]}>
+        <View style={styles.itemInfo}>
+          <Text style={styles.itemName} numberOfLines={2}>
+            {item.nama}
+          </Text>
+          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            <Text style={styles.itemDetails}>
+              {item.ukuran} | @{item.harga.toLocaleString('id-ID')} |
+            </Text>
+
+            {/* Indikator Stok Berwarna */}
+            <Text
+              style={[
+                styles.itemDetails,
+                {marginLeft: 4},
+                // Jika Minus: Merah Gelap, Jika Low: Merah, Jika Aman: Hijau
+                isStokMinus
+                  ? {color: '#B71C1C', fontWeight: 'bold'}
+                  : isStokLow
+                  ? {color: '#D32F2F', fontWeight: 'bold'}
+                  : {color: '#2E7D32'},
+              ]}>
+              {isStokMinus
+                ? `Stok: ${item.stok} (MINUS)`
+                : `Stok: ${item.stok}`}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.itemRight}>
+          <Text style={styles.totalItem}>
+            Rp {(item.harga * item.jumlah).toLocaleString('id-ID')}
+          </Text>
+          <View style={styles.qtyControl}>
+            <TouchableOpacity
+              onPress={() => handleQtyChange(index, -1)}
+              style={styles.qtyBtn}>
+              <Icon name="minus" size={16} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.qtyText}>{item.jumlah}</Text>
+            <TouchableOpacity
+              onPress={() => handleQtyChange(index, 1)}
+              style={styles.qtyBtn}>
+              <Icon name="plus" size={16} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
-            onPress={() => handleQtyChange(index, -1)}
-            style={styles.qtyBtn}>
-            <Icon name="minus" size={16} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.qtyText}>{item.jumlah}</Text>
-          <TouchableOpacity
-            onPress={() => handleQtyChange(index, 1)}
-            style={styles.qtyBtn}>
-            <Icon name="plus" size={16} color="#fff" />
+            style={styles.btnDelete}
+            onPress={() => handleRemoveItem(index)}>
+            <Icon name="trash-2" size={14} color="#fff" />
+            <Text style={styles.btnDeleteText}>Hapus</Text>
           </TouchableOpacity>
         </View>
       </View>
+    );
+  };
+
+  // KOMPONEN EMPTY STATE
+  const EmptyState = () => (
+    <View style={styles.emptyContainer}>
+      <View style={styles.emptyIconBg}>
+        <Icon name="shopping-cart" size={40} color="#ccc" />
+      </View>
+      <Text style={styles.emptyTextTitle}>Keranjang Kosong</Text>
+      <Text style={styles.emptyTextSub}>Silakan scan barcode barang</Text>
     </View>
   );
 
@@ -480,14 +712,25 @@ const PenjualanLangsungScreen = ({navigation}) => {
         data={items}
         renderItem={renderItem}
         keyExtractor={(item, idx) => `${item.kode}-${idx}`}
-        contentContainerStyle={{paddingBottom: 100}}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>Belum ada barang discan.</Text>
-        }
+        contentContainerStyle={{paddingBottom: 100, flexGrow: 1}} // flexGrow penting untuk empty state
+        ListEmptyComponent={EmptyState}
       />
 
       {/* Footer Total & Button */}
       <View style={styles.footer}>
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            marginBottom: 5,
+          }}>
+          <Text style={{fontSize: 12, color: '#777'}}>Total Item:</Text>
+          <Text style={{fontSize: 12, fontWeight: 'bold', color: '#333'}}>
+            {items.length} Jenis ({totals.totalPcs} Pcs)
+          </Text>
+        </View>
+        <View style={{height: 1, backgroundColor: '#eee', marginBottom: 8}} />
+
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Sub Total:</Text>
           <Text style={styles.totalValue}>
@@ -530,6 +773,20 @@ const PenjualanLangsungScreen = ({navigation}) => {
             {promoApplied ? (
               <Text style={styles.promoBadge}>{promoApplied}</Text>
             ) : null}
+
+            <Text style={styles.inputLabel}>Pilih Uang Cepat:</Text>
+            <View style={styles.quickCashContainer}>
+              {[totals.grandTotal, 20000, 50000, 100000].map((val, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.quickCashBtn}
+                  onPress={() => setTunai(String(val))}>
+                  <Text style={styles.quickCashText}>
+                    {idx === 0 ? 'Uang Pas' : val / 1000 + 'k'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
             <Text style={styles.inputLabel}>Tunai (Cash)</Text>
             <TextInput
@@ -661,6 +918,39 @@ const styles = StyleSheet.create({
     minWidth: 20,
     textAlign: 'center',
   },
+  btnDelete: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#D32F2F',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  btnDeleteText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginLeft: 4,
+  },
+  // EMPTY STATE STYLES
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 50,
+  },
+  emptyIconBg: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#E0E0E0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  emptyTextTitle: {fontSize: 18, fontWeight: 'bold', color: '#555'},
+  emptyTextSub: {fontSize: 14, color: '#888', marginTop: 5},
 
   footer: {
     backgroundColor: '#fff',
@@ -800,6 +1090,26 @@ const styles = StyleSheet.create({
   },
   cancelText: {color: '#333', fontWeight: 'bold'},
   confirmText: {color: '#fff', fontWeight: 'bold'},
+  // Style Quick Cash
+  quickCashContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 15,
+    flexWrap: 'wrap', // Agar turun ke bawah kalau layar sempit
+  },
+  quickCashBtn: {
+    backgroundColor: '#E3F2FD',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#BBDEFB',
+  },
+  quickCashText: {
+    color: '#1976D2',
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
 });
 
 export default PenjualanLangsungScreen;

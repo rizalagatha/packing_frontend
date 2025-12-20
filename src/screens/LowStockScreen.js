@@ -7,9 +7,16 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   SafeAreaView,
+  Modal,
+  TextInput,
+  Alert,
 } from 'react-native';
 import {AuthContext} from '../context/AuthContext';
-import {getLowStockApi, searchStoresApi} from '../api/ApiService';
+import {
+  getLowStockApi,
+  searchStoresApi,
+  createPermintaanOtomatisApi,
+} from '../api/ApiService';
 import SearchModal from '../components/SearchModal';
 import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
@@ -18,9 +25,19 @@ const LowStockScreen = ({navigation}) => {
   const {userToken, userInfo} = useContext(AuthContext);
   const [items, setItems] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
   const [selectedStore, setSelectedStore] = useState(null);
   const [isStoreModalVisible, setStoreModalVisible] = useState(false);
-  const [selectedItems, setSelectedItems] = useState(new Set());
+
+  // Menggunakan Map untuk menyimpan item yang dipilih beserta jumlah alokasinya
+  // Key: "kode-ukuran", Value: { ...itemData, inputAlokasi: number }
+  const [selectedItemsMap, setSelectedItemsMap] = useState(new Map());
+
+  // --- STATE MODAL QTY ---
+  const [qtyModalVisible, setQtyModalVisible] = useState(false);
+  const [tempItem, setTempItem] = useState(null);
+  const [tempQty, setTempQty] = useState('');
 
   // Cek apakah user adalah KDC/Pusat
   const isKDC =
@@ -31,7 +48,6 @@ const LowStockScreen = ({navigation}) => {
   // --- EFFECT: Set Otomatis Toko untuk User Store ---
   useEffect(() => {
     if (!isKDC) {
-      // Gunakan cabang_nama dari userInfo, fallback ke nama user jika belum ada (untuk kompatibilitas)
       const namaToko = userInfo.cabang_nama || userInfo.nama;
       setSelectedStore({kode: userInfo.cabang, nama: namaToko});
     }
@@ -40,7 +56,7 @@ const LowStockScreen = ({navigation}) => {
   const fetchLowStock = useCallback(async () => {
     if (!selectedStore) return;
     setIsLoading(true);
-    setSelectedItems(new Set());
+    setSelectedItemsMap(new Map()); // Reset pilihan saat load ulang
     try {
       const response = await getLowStockApi(
         {cabang: selectedStore.kode},
@@ -63,83 +79,154 @@ const LowStockScreen = ({navigation}) => {
     else setItems([]);
   }, [selectedStore, fetchLowStock]);
 
-  const toggleSelection = itemKey => {
-    setSelectedItems(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(itemKey)) newSet.delete(itemKey);
-      else newSet.add(itemKey);
-      return newSet;
-    });
+  // --- HANDLER ITEM CLICK (OPEN QTY MODAL) ---
+  const handleItemPress = item => {
+    const itemKey = `${item.kode}-${item.ukuran}`;
+
+    // Hitung saran alokasi (Buffer - Stok Real)
+    // Jika user KDC, saran order adalah kebutuhan toko
+    const suggestion = Math.max(0, item.buffer_stok - item.stok_real);
+
+    // Cek apakah sudah ada nilai sebelumnya
+    const existing = selectedItemsMap.get(itemKey);
+    const initialQty = existing ? existing.inputAlokasi : suggestion;
+
+    setTempItem(item);
+    setTempQty(String(initialQty));
+    setQtyModalVisible(true);
   };
 
-  const handleProcessAction = () => {
-    if (selectedItems.size === 0) {
-      Toast.show({
+  // --- HANDLER SAVE QTY FROM MODAL ---
+  const handleSaveQty = () => {
+    const qty = parseInt(tempQty, 10);
+
+    if (isNaN(qty) || qty <= 0) {
+      // Jika 0 atau invalid, hapus dari seleksi (uncheck)
+      const newMap = new Map(selectedItemsMap);
+      newMap.delete(`${tempItem.kode}-${tempItem.ukuran}`);
+      setSelectedItemsMap(newMap);
+    } else {
+      // Simpan ke Map
+      const newMap = new Map(selectedItemsMap);
+      newMap.set(`${tempItem.kode}-${tempItem.ukuran}`, {
+        ...tempItem,
+        inputAlokasi: qty,
+      });
+      setSelectedItemsMap(newMap);
+    }
+
+    setQtyModalVisible(false);
+    setTempItem(null);
+  };
+
+  // --- HANDLER PROSES (CREATE REQUEST & NAVIGATE) ---
+  const handleProcessAction = async () => {
+    if (selectedItemsMap.size === 0) {
+      return Toast.show({
         type: 'error',
         text1: 'Pilih Barang',
-        text2: 'Pilih minimal satu barang.',
+        text2: 'Belum ada barang dengan alokasi > 0.',
       });
-      return;
     }
 
-    const itemsToSend = items.filter(item =>
-      selectedItems.has(`${item.kode}-${item.ukuran}`),
+    // Hanya KDC yang bisa membuat Permintaan Otomatis untuk cabang
+    if (!isKDC) {
+      return Alert.alert('Info', 'Fitur ini khusus untuk user KDC/Pusat.');
+    }
+
+    Alert.alert(
+      'Konfirmasi',
+      `Buat Permintaan Otomatis untuk ${selectedItemsMap.size} item?`,
+      [
+        {text: 'Batal', style: 'cancel'},
+        {
+          text: 'Ya, Proses',
+          onPress: async () => {
+            setIsProcessing(true);
+            try {
+              // 1. Siapkan Payload
+              const itemsPayload = Array.from(selectedItemsMap.values()).map(
+                item => ({
+                  kode: item.kode,
+                  ukuran: item.ukuran,
+                  jumlah: item.inputAlokasi,
+                }),
+              );
+
+              const payload = {
+                header: {
+                  store: selectedStore,
+                  keterangan: 'Analisis Stok Menipis (Auto)',
+                },
+                items: itemsPayload,
+              };
+
+              // 2. Panggil API Backend
+              const response = await createPermintaanOtomatisApi(
+                payload,
+                userToken,
+              );
+              const {nomor, store} = response.data.data;
+
+              Toast.show({
+                type: 'success',
+                text1: 'Berhasil',
+                text2: `Permintaan ${nomor} dibuat.`,
+              });
+
+              // 3. NAVIGASI LANGSUNG KE PACKING LIST SCREEN
+              // Kita kirim parameter agar PackingListScreen langsung load data tersebut
+              navigation.replace('PackingList', {
+                nomor: null, // Mode scan baru (tapi kita inject data lewat header)
+                // Atau jika PackingListScreen Anda support "Load by Nomor":
+                autoLoadRequest: {
+                  nomor: nomor,
+                  store: store,
+                },
+              });
+
+              // ALTERNATIF: Jika PackingListScreen Anda butuh 'nomor' untuk mode edit/view:
+              // navigation.replace('PackingListScreen', { nomor: nomor });
+            } catch (error) {
+              const msg =
+                error.response?.data?.message || 'Gagal memproses permintaan.';
+              Alert.alert('Error', msg);
+            } finally {
+              setIsProcessing(false);
+            }
+          },
+        },
+      ],
     );
-
-    if (isKDC) {
-      // ALUR 1: User KDC -> Buat Surat Jalan (Mode Manual Scan)
-      const itemsForSJ = itemsToSend.map(item => ({
-        kode: item.kode,
-        barcode: item.barcode,
-        nama: item.nama,
-        ukuran: item.ukuran,
-        stok: item.stok_dc, // Stok DC sebagai referensi
-        jumlahKirim: 0,
-        jumlahScan: 0,
-        qty: 0,
-      }));
-
-      navigation.navigate('SuratJalan', {
-        initialStore: selectedStore,
-        initialItems: itemsForSJ,
-        mode: 'manual-scan',
-      });
-    } else {
-      // ALUR 2: User Store -> Buat Permintaan Barang
-      const itemsForMinta = itemsToSend.map(item => ({
-        kode: item.kode,
-        barcode: item.barcode,
-        nama: item.nama,
-        ukuran: item.ukuran,
-        stok: item.stok_real, // Stok toko saat ini
-        stokmin: item.buffer_stok, // Mapping buffer_stok ke stokmin
-        stokmax: item.buffer_stok, // Asumsi max = min buffer untuk tampilan sederhana
-        mino: Math.max(0, item.buffer_stok - item.stok_real), // Hitung mino (saran order)
-        jumlah: Math.max(0, item.buffer_stok - item.stok_real),
-      }));
-
-      navigation.navigate('MintaBarang', {
-        initialItems: itemsForMinta,
-        fromLowStock: true,
-      });
-    }
   };
 
   const renderItem = ({item}) => {
     const itemKey = `${item.kode}-${item.ukuran}`;
-    const isSelected = selectedItems.has(itemKey);
+    const selectedData = selectedItemsMap.get(itemKey);
+    const isSelected = !!selectedData;
 
     return (
       <TouchableOpacity
         style={[styles.itemContainer, isSelected && styles.itemSelected]}
-        onPress={() => toggleSelection(itemKey)}>
-        <View style={styles.checkboxContainer}>
-          <Icon
-            name={isSelected ? 'check-square' : 'square'}
-            size={24}
-            color={isSelected ? '#D32F2F' : '#BDBDBD'}
-          />
+        onPress={() => handleItemPress(item)}>
+        <View style={styles.leftSection}>
+          <View style={styles.checkboxContainer}>
+            <Icon
+              name={isSelected ? 'check-square' : 'square'}
+              size={24}
+              color={isSelected ? '#D32F2F' : '#BDBDBD'}
+            />
+          </View>
+          {/* Tampilkan QTY Alokasi jika terpilih */}
+          {isSelected && (
+            <View style={styles.qtyBadge}>
+              <Text style={styles.qtyBadgeText}>
+                {selectedData.inputAlokasi}
+              </Text>
+            </View>
+          )}
         </View>
+
         <View style={{flex: 1}}>
           <View style={styles.itemHeader}>
             <Text style={styles.itemName} numberOfLines={2}>
@@ -150,7 +237,7 @@ const LowStockScreen = ({navigation}) => {
 
           <View style={styles.itemStatsRow}>
             <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Stok</Text>
+              <Text style={styles.statLabel}>Toko</Text>
               <Text style={[styles.statValue, {color: '#D32F2F'}]}>
                 {item.stok_real}
               </Text>
@@ -179,7 +266,7 @@ const LowStockScreen = ({navigation}) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Modal hanya muncul untuk KDC */}
+      {/* Modal Search Store */}
       <SearchModal
         visible={isStoreModalVisible}
         onClose={() => setStoreModalVisible(false)}
@@ -198,12 +285,56 @@ const LowStockScreen = ({navigation}) => {
         )}
       />
 
+      {/* Modal Input Alokasi */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={qtyModalVisible}
+        onRequestClose={() => setQtyModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Input Alokasi</Text>
+            <Text style={styles.modalSubtitle}>
+              {tempItem?.nama} ({tempItem?.ukuran})
+            </Text>
+
+            <View style={styles.infoRow}>
+              <Text style={styles.infoText}>
+                Stok Toko: {tempItem?.stok_real}
+              </Text>
+              <Text style={styles.infoText}>
+                Buffer: {tempItem?.buffer_stok}
+              </Text>
+            </View>
+
+            <TextInput
+              style={styles.qtyInput}
+              keyboardType="number-pad"
+              value={tempQty}
+              onChangeText={setTempQty}
+              autoFocus={true}
+              selectTextOnFocus={true}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.btnCancel}
+                onPress={() => setQtyModalVisible(false)}>
+                <Text style={styles.btnTextCancel}>Batal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnSave} onPress={handleSaveQty}>
+                <Text style={styles.btnTextSave}>Simpan</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <View style={styles.headerForm}>
         <Text style={styles.label}>
           {isKDC ? 'Analisis Stok Toko:' : `Stok Menipis: ${userInfo.cabang}`}
         </Text>
 
-        {/* Jika KDC: Tombol Pilih Toko. Jika Store: Text Nama Toko Statis */}
         {isKDC ? (
           <TouchableOpacity
             style={styles.lookupButton}
@@ -256,23 +387,33 @@ const LowStockScreen = ({navigation}) => {
         />
       )}
 
-      {selectedItems.size > 0 && (
+      {selectedItemsMap.size > 0 && (
         <View style={styles.footerContainer}>
           <View style={styles.summaryContainer}>
             <Text style={styles.summaryText}>
-              {selectedItems.size} Barang Dipilih
+              {selectedItemsMap.size} Barang Dipilih
             </Text>
           </View>
-          <TouchableOpacity style={styles.button} onPress={handleProcessAction}>
-            <Icon
-              name={isKDC ? 'truck' : 'shopping-cart'}
-              size={20}
-              color="#fff"
-              style={{marginRight: 10}}
-            />
-            <Text style={styles.buttonText}>
-              {isKDC ? 'Buat Surat Jalan' : 'Buat Permintaan'}
-            </Text>
+          <TouchableOpacity
+            style={[
+              styles.button,
+              isProcessing && {backgroundColor: '#B71C1C'},
+            ]}
+            onPress={handleProcessAction}
+            disabled={isProcessing}>
+            {isProcessing ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Icon
+                  name="check-circle"
+                  size={20}
+                  color="#fff"
+                  style={{marginRight: 10}}
+                />
+                <Text style={styles.buttonText}>Proses Permintaan</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       )}
@@ -322,7 +463,16 @@ const styles = StyleSheet.create({
     borderColor: '#D32F2F',
     borderWidth: 1,
   },
-  checkboxContainer: {marginRight: 15},
+
+  leftSection: {alignItems: 'center', marginRight: 15},
+  checkboxContainer: {marginBottom: 5},
+  qtyBadge: {
+    backgroundColor: '#D32F2F',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  qtyBadgeText: {color: '#fff', fontWeight: 'bold', fontSize: 12},
 
   itemHeader: {
     flexDirection: 'row',
@@ -381,6 +531,70 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   buttonText: {color: '#fff', fontWeight: 'bold', fontSize: 16},
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    width: '80%',
+    padding: 20,
+    borderRadius: 12,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 5,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 15,
+  },
+  infoText: {fontSize: 12, color: '#555'},
+  qtyInput: {
+    borderWidth: 1,
+    borderColor: '#D32F2F',
+    borderRadius: 8,
+    textAlign: 'center',
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    padding: 10,
+    marginBottom: 20,
+  },
+  modalButtons: {flexDirection: 'row', justifyContent: 'space-between'},
+  btnCancel: {
+    flex: 1,
+    padding: 12,
+    alignItems: 'center',
+    marginRight: 10,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+  },
+  btnSave: {
+    flex: 1,
+    padding: 12,
+    alignItems: 'center',
+    marginLeft: 10,
+    backgroundColor: '#D32F2F',
+    borderRadius: 8,
+  },
+  btnTextCancel: {color: '#333', fontWeight: 'bold'},
+  btnTextSave: {color: '#fff', fontWeight: 'bold'},
 });
 
 export default LowStockScreen;

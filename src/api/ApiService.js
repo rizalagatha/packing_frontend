@@ -207,6 +207,12 @@ export const deleteWhatsappSessionApi = token => {
   });
 };
 
+export const getWhatsappStatusApi = token => {
+  return apiClient.get('/whatsapp/status', {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
 // --- Checker ---
 export const searchStbjApi = (params, token) => {
   return apiClient.get('/checker/search-stbj', {
@@ -277,6 +283,12 @@ export const getLowStockApi = (params, token) => {
   });
 };
 
+export const createPermintaanOtomatisApi = (payload, token) => {
+  return apiClient.post('/stock/create-auto', payload, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
 // --- Minta Barang ---
 export const getAutoBufferApi = token => {
   return apiClient.get('/minta-barang/auto-buffer', {
@@ -318,6 +330,22 @@ export const searchRekeningApi = (params, token) => {
   });
 };
 
+// Fungsi Kirim Gambar (Multipart)
+export const sendStrukWaImageApi = async (formData, token) => {
+  return apiClient.post('/penjualan/send-wa-image', formData, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'multipart/form-data', // <--- AKTIFKAN INI
+    },
+    // FUNGSI INI WAJIB ADA:
+    // Mencegah Axios mengubah FormData menjadi JSON string yang bikin error
+    transformRequest: (data, headers) => {
+      return data;
+    },
+    timeout: 30000, // Timeout diperpanjang jadi 30 detik buat upload
+  });
+};
+
 // --- Invoice Browse (Mobile) ---
 export const getInvoicesApi = (params, token) => {
   return apiClient.get('/invoices', {
@@ -348,6 +376,155 @@ export const getPrintDataApi = (nomor, token) => {
 
 export const sendStrukWaApi = (data, token) => {
   return apiClient.post('/penjualan/send-wa', data, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Stok Opname ---
+export const getCabangListApi = token => {
+  return apiClient.get('/stok-opname/cabang', {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// -> TAMBAHKAN INI (Untuk Download Master Barang)
+export const downloadMasterDataApi = (token, cabangKode) => {
+  return apiClient.get('/stok-opname/download', {
+    params: {cabang: cabangKode}, // Kirim parameter cabang agar data tidak kosong
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// -> TAMBAHKAN INI (Untuk Upload Hasil Scan)
+export const uploadOpnameResultApi = (data, token) => {
+  return apiClient.post('/stok-opname/upload', data, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Dashboard Management (BARU) ---
+export const getDashboardTodayStatsApi = token => {
+  return apiClient.get('/dashboard/today-stats', {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getDashboardPiutangApi = token => {
+  return apiClient.get('/dashboard/total-sisa-piutang', {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getDashboardBranchPerformanceApi = token => {
+  return apiClient.get('/dashboard/branch-performance', {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getDashboardSalesChartApi = (params, token) => {
+  return apiClient.get('/dashboard/sales-chart', {
+    params, // { startDate, endDate, groupBy, cabang }
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getDashboardPendingActionsApi = token => {
+  return apiClient.get('/dashboard/pending-actions', {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getDashboardTargetSummaryApi = token => {
+  return apiClient.get('/dashboard/sales-target-summary', {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// 1. Ambil List Sisa Piutang Per Cabang
+export const getDashboardPiutangPerCabangApi = token => {
+  // Pastikan route backend sesuai dengan yang kita buat sebelumnya
+  return apiClient.get('/dashboard/piutang-per-cabang', {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// 2. Ambil Detail Invoice Piutang per Cabang
+export const getDashboardPiutangDetailApi = (kodeCabang, token) => {
+  return apiClient.get(`/dashboard/piutang-detail/${kodeCabang}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// 1. Ambil Top 10 Produk Terlaris
+export const getDashboardTopSellingApi = (token, branchFilter = '') => {
+  return apiClient.get('/dashboard/top-selling', {
+    params: {branchFilter}, // Kirim filter jika ada (opsional)
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// 2. Cek Sebaran Stok (Interaktif)
+// Kita kirim ukuran juga agar data stok spesifik
+export const getDashboardStockSpreadApi = (barcode, ukuran, token) => {
+  return apiClient.get(`/dashboard/stock-spread/${barcode}`, {
+    params: {ukuran},
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getDashboardTrendsApi = (token, branchFilter = '') => {
+  return apiClient.get('/dashboard/trends', {
+    params: {branchFilter},
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getEmptyStockRegulerApi = (
+  token,
+  search = '',
+  targetCabang = '',
+) => {
+  return apiClient.get('/dashboard/stock-empty-reguler', {
+    params: {search, targetCabang},
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Packing List ---
+// 1. Simpan (Create/Update)
+export const savePackingListApi = (data, token) => {
+  return apiClient.post('/packing-list-form/save', data, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// 2. Load Data Edit
+export const getPackingListDetailApi = (nomor, token) => {
+  return apiClient.get(`/packing-list-form/form/${encodeURIComponent(nomor)}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// 3. Load dari Permintaan Store
+export const loadItemsFromRequestApi = (nomorPermintaan, token) => {
+  return apiClient.get('/packing-list-form/load-request', {
+    params: {nomor: nomorPermintaan},
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// 4. Cari Barang via Barcode
+export const findProductByBarcodeApi = (barcode, token) => {
+  return apiClient.get(`/packing-list-form/barcode/${barcode}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// 5. Lookup Permintaan (Untuk Modal Search)
+export const searchPermintaanOpenApi = (params, token) => {
+  return apiClient.get('/packing-list-form/search-permintaan', {
+    // Pastikan endpoint ini ada di backend route Anda
+    params,
     headers: {Authorization: `Bearer ${token}`},
   });
 };

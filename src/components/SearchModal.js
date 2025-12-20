@@ -136,7 +136,12 @@ const SearchModal = ({
         </View>
         <FlatList
           data={data}
-          keyExtractor={item => item[keyField]}
+          keyExtractor={(item, index) => {
+            // 1. Coba ambil dari keyField (jika ada)
+            const key = item[keyField];
+            // 2. Jika ada, ubah jadi string. Jika tidak ada, pakai index array.
+            return key ? String(key) : String(index);
+          }}
           keyboardShouldPersistTaps="handled"
           renderItem={({item}) => (
             <TouchableOpacity

@@ -24,6 +24,9 @@ import LowStockScreen from './src/screens/LowStockScreen';
 import MintaBarangScreen from './src/screens/MintaBarangScreen';
 import PenjualanLangsungScreen from './src/screens/PenjualanLangsungScreen';
 import PenjualanListScreen from './src/screens/PenjualanListScreen';
+import StokOpnameScreen from './src/screens/StokOpnameScreen';
+import ManagementDashboardScreen from './src/screens/ManagementDashboardScreen';
+import PackingListScreen from './src/screens/PackingListScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -93,6 +96,11 @@ const App = () => {
               options={{title: 'Dashboard'}}
             />
             <Stack.Screen
+              name="ManagementDashboard"
+              component={ManagementDashboardScreen}
+              options={{title: 'Management Dashboard', headerShown: false}} // Header disembunyikan karena punya header sendiri
+            />
+            <Stack.Screen
               name="Packing"
               component={PackingScreen}
               options={{title: 'Proses Packing'}}
@@ -106,6 +114,11 @@ const App = () => {
               name="SuratJalan"
               component={SuratJalanScreen}
               options={{title: 'Buat Surat Jalan'}}
+            />
+            <Stack.Screen
+              name="PackingList"
+              component={PackingListScreen}
+              options={{title: 'Buat Packing List'}}
             />
             <Stack.Screen
               name="LowStock"
@@ -166,6 +179,11 @@ const App = () => {
               name="PenjualanList"
               component={PenjualanListScreen}
               options={{title: 'Daftar Penjualan'}}
+            />
+            <Stack.Screen
+              name="StokOpname"
+              component={StokOpnameScreen}
+              options={{title: 'Stok Opname (Offline)'}}
             />
           </>
         )}
