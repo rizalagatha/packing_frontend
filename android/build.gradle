@@ -1,9 +1,9 @@
 buildscript {
     ext {
         buildToolsVersion = "33.0.0"
-        minSdkVersion = 21
-        compileSdkVersion = 33
-        targetSdkVersion = 33
+        minSdkVersion = 23
+        compileSdkVersion = 34
+        targetSdkVersion = 34
         ndkVersion = "23.1.7779620"
         kotlinVersion = "1.8.20" // Versi Kotlin yang stabil untuk setup ini
     }
@@ -15,6 +15,7 @@ buildscript {
         classpath("com.android.tools.build:gradle:7.4.2")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        classpath('com.google.gms:google-services:4.4.0')
     }
 }
 

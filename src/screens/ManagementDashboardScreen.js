@@ -4,6 +4,7 @@ import React, {
   useContext,
   useCallback,
   useRef,
+  useMemo,
 } from 'react';
 import {
   View,
@@ -23,11 +24,16 @@ import {
   Animated, // Import Animated
   PanResponder, // Import PanResponder untuk Swipe
   Easing,
+  Image,
+  ToastAndroid,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import LinearGradient from 'react-native-linear-gradient';
 import {LineChart} from 'react-native-chart-kit';
 import {AuthContext} from '../context/AuthContext';
+import DeviceInfo from 'react-native-device-info';
+import EmptyStockModal from '../components/EmptyStockModal';
+import {useRoute} from '@react-navigation/native';
 
 import {
   getDashboardTodayStatsApi,
@@ -39,9 +45,13 @@ import {
   getDashboardPiutangDetailApi,
   getDashboardTopSellingApi,
   getDashboardStockSpreadApi,
+  getDashboardProductSalesSpreadApi,
   getDashboardTrendsApi,
   getEmptyStockRegulerApi,
   getCabangListApi,
+  getPendingAuthorizationApi,
+  processAuthorizationApi,
+  getDashboardNegativeStockApi,
 } from '../api/ApiService';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -136,9 +146,329 @@ const AnimatedBar = ({percentage, color, height = 10, style}) => {
   );
 };
 
+// --- KOMPONEN TERPISAH (MEMOIZED) ---
+
+// 1. Item Request Satuan
+const AuthItem = React.memo(
+  ({item, onProcess, processingId}) => {
+    const isProcessing = processingId === item.o_nomor;
+
+    return (
+      <View style={styles.authItemCard}>
+        {/* HEADER: Jenis & Tanggal */}
+        <View style={styles.authHeaderRow}>
+          <View style={styles.authBadgeType}>
+            <Text style={styles.authBadgeText}>{item.o_jenis}</Text>
+          </View>
+          <Text style={styles.authTimeText}>
+            {new Date(item.o_created).toLocaleString('id-ID', {
+              hour: '2-digit',
+              minute: '2-digit',
+              day: 'numeric',
+              month: 'short',
+            })}
+          </Text>
+        </View>
+
+        {/* CONTENT UTAMA */}
+        <View style={styles.authContent}>
+          {/* 1. NOMOR INVOICE (o_transaksi) */}
+          {item.o_transaksi ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginBottom: 4,
+              }}>
+              <Icon
+                name="file-text"
+                size={12}
+                color="#555"
+                style={{marginRight: 4}}
+              />
+              <Text style={styles.authTrxText}>{item.o_transaksi}</Text>
+            </View>
+          ) : null}
+
+          {/* 2. BARCODE (o_barcode) - Jika Ada */}
+          {item.o_barcode && item.o_barcode !== '' ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginBottom: 4,
+              }}>
+              <Icon
+                name="maximize"
+                size={12}
+                color="#555"
+                style={{marginRight: 4}}
+              />
+              <Text style={{fontSize: 12, color: '#555'}}>
+                {item.o_barcode}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* 3. NOMINAL */}
+          {item.o_nominal > 0 && (
+            <Text style={styles.authNominalText}>
+              Nominal: {formatRupiah(item.o_nominal)}
+            </Text>
+          )}
+
+          {/* 4. KETERANGAN (Cust Name + Item Name) */}
+          {/* Karena kita menyimpan "Cust: Budi \n Item: Kaos" di o_ket, text ini akan muncul multi-line */}
+          <View style={styles.infoBox}>
+            <Text style={styles.authDescText}>{item.o_ket}</Text>
+          </View>
+
+          <Text style={styles.authRequester}>Req by: {item.o_requester}</Text>
+        </View>
+
+        <View style={styles.authActionRow}>
+          <TouchableOpacity
+            style={[styles.btnAuthAction, styles.btnReject]}
+            onPress={() => onProcess(item, 'REJECT')}
+            disabled={!!processingId}>
+            <Text style={styles.btnRejectText}>TOLAK</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.btnAuthAction, styles.btnApprove]}
+            onPress={() => onProcess(item, 'APPROVE')}
+            disabled={!!processingId}>
+            {isProcessing ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.btnApproveText}>SETUJUI</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  },
+  (prevProps, nextProps) => {
+    // Hanya render ulang jika processingId berubah (sedang loading item ini)
+    return (
+      prevProps.processingId === nextProps.processingId &&
+      prevProps.item === nextProps.item
+    );
+  },
+);
+
+// 2. Group Cabang (Accordion)
+const BranchGroup = React.memo(
+  ({item, expandedBranch, onToggle, onProcess, processingId}) => {
+    const isExpanded = expandedBranch === item.branch;
+    const count = item.data.length;
+
+    return (
+      <View style={styles.branchGroupContainer}>
+        <TouchableOpacity
+          style={[styles.branchHeader, isExpanded && styles.branchHeaderActive]}
+          onPress={() => onToggle(item.branch)}
+          activeOpacity={0.7}>
+          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            <View style={styles.branchIconBg}>
+              <Icon name="map-pin" size={16} color="#fff" />
+            </View>
+            <Text style={styles.branchTitle}>CABANG {item.branch}</Text>
+          </View>
+
+          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            <View style={styles.countBadge}>
+              <Text style={styles.countText}>{count}</Text>
+            </View>
+            <Icon
+              name={isExpanded ? 'chevron-up' : 'chevron-down'}
+              size={20}
+              color="#666"
+              style={{marginLeft: 10}}
+            />
+          </View>
+        </TouchableOpacity>
+
+        {isExpanded && (
+          <View style={styles.branchContent}>
+            {item.data.map(request => (
+              <AuthItem
+                key={request.o_nomor} // Key unik
+                item={request}
+                onProcess={onProcess}
+                processingId={processingId}
+              />
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  },
+);
+
+// --- KOMPONEN BARU: BRANCH SELECTOR MODAL (Bottom Sheet Style) ---
+const BranchSelectorModal = ({
+  visible,
+  onClose,
+  branches,
+  selected,
+  onSelect,
+}) => {
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="slide"
+      statusBarTranslucent={true}
+      onRequestClose={onClose}>
+      <TouchableOpacity
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={onClose}>
+        <View style={styles.bottomSheetContent}>
+          <View style={styles.bottomSheetHeader}>
+            <View style={styles.bottomSheetHandle} />
+            <Text style={styles.bottomSheetTitle}>Pilih Cabang</Text>
+          </View>
+
+          <ScrollView contentContainerStyle={{padding: 20}}>
+            {/* Opsi SEMUA */}
+            <TouchableOpacity
+              style={[
+                styles.branchOption,
+                selected === 'ALL' && styles.branchOptionActive,
+              ]}
+              onPress={() => onSelect('ALL')}>
+              <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                <View
+                  style={[
+                    styles.branchIcon,
+                    selected === 'ALL'
+                      ? {backgroundColor: '#fff'}
+                      : {backgroundColor: '#E3F2FD'},
+                  ]}>
+                  <Icon
+                    name="grid"
+                    size={18}
+                    color={selected === 'ALL' ? '#1565C0' : '#1565C0'}
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.branchOptionText,
+                    selected === 'ALL' && styles.branchOptionTextActive,
+                  ]}>
+                  Semua Cabang
+                </Text>
+              </View>
+              {selected === 'ALL' && (
+                <Icon name="check-circle" size={20} color="#fff" />
+              )}
+            </TouchableOpacity>
+
+            {/* List Cabang */}
+            {branches.map((cab, index) => {
+              // 1. Logika Fallback Properti yang Kuat
+              // Cek berbagai kemungkinan nama kolom dari database
+              const kode =
+                cab.gdg_kode ||
+                cab.kode ||
+                cab.kode_cabang ||
+                cab.cabang_kode ||
+                '?';
+              const nama =
+                cab.gdg_nama ||
+                cab.nama ||
+                cab.nama_cabang ||
+                cab.cabang_nama ||
+                'Cabang';
+
+              const isSelected = selected === kode;
+              return (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.branchOption,
+                    isSelected && styles.branchOptionActive,
+                  ]}
+                  onPress={() => onSelect(kode)}>
+                  <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                    <View
+                      style={[
+                        styles.branchIcon,
+                        isSelected
+                          ? {backgroundColor: '#fff'}
+                          : {backgroundColor: '#F5F5F5'},
+                      ]}>
+                      <Text
+                        style={{
+                          fontWeight: 'bold',
+                          color: '#1565C0',
+                          fontSize: 12,
+                        }}>
+                        {kode}
+                      </Text>
+                    </View>
+                    <View style={{marginLeft: 12}}>
+                      <Text
+                        style={[
+                          styles.branchOptionText,
+                          isSelected && styles.branchOptionTextActive,
+                        ]}>
+                        {nama}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.branchOptionSub,
+                          isSelected && {color: 'rgba(255,255,255,0.8)'},
+                        ]}>
+                        Kode: {kode}
+                      </Text>
+                    </View>
+                  </View>
+                  {isSelected && (
+                    <Icon name="check-circle" size={20} color="#fff" />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+};
+
 const ManagementDashboardScreen = ({navigation}) => {
-  const {userInfo, userToken} = useContext(AuthContext);
+  const route = useRoute();
+  const {userInfo, userToken, logout} = useContext(AuthContext);
   const [refreshing, setRefreshing] = useState(false);
+
+  // --- 1. AMBIL VERSI DINAMIS ---
+  const appVersion = DeviceInfo.getVersion();
+
+  // --- 2. LOGIC AKSES (Ganti isHaris dengan ini) ---
+  const {showSidebar, canAuthorize} = useMemo(() => {
+    if (!userInfo || !userInfo.nama) {
+      return {showSidebar: false, canAuthorize: false};
+    }
+
+    const name = userInfo.nama.toUpperCase();
+    const branch = userInfo.cabang; // misal 'KDC' atau 'K01'
+
+    // 1. Siapa yang boleh buka Sidebar? (Haris, Darul, Estu)
+    const sidebarAccess = ['HARIS', 'DARUL', 'ESTU'].some(allowed =>
+      name.includes(allowed),
+    );
+
+    // 2. Siapa yang boleh Otorisasi? (HANYA HARIS & DARUL dan harus User Pusat/KDC)
+    // Hapus 'ESTU' dari sini
+    const authAccess =
+      branch === 'KDC' &&
+      ['HARIS', 'DARUL'].some(allowed => name.includes(allowed));
+
+    return {showSidebar: sidebarAccess, canAuthorize: authAccess};
+  }, [userInfo]);
 
   // --- STATE DASHBOARD ---
   const [todayStats, setTodayStats] = useState({sales: 0, qty: 0, trx: 0});
@@ -156,10 +486,12 @@ const ManagementDashboardScreen = ({navigation}) => {
   const [detailInvoices, setDetailInvoices] = useState([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  // --- STATE KHUSUS HARIS (OTORISASI) ---
+  // --- STATE KHUSUS OTORISASI (UPDATED) ---
   const [otorisasiVisible, setOtorisasiVisible] = useState(false);
-  const [otoKode, setOtoKode] = useState('');
-  const [otoResult, setOtoResult] = useState('');
+  const [authList, setAuthList] = useState([]); // List of pending requests
+  const [loadingAuth, setLoadingAuth] = useState(false);
+  const [processingAuth, setProcessingAuth] = useState(null); // ID of item being processed
+  const [expandedBranch, setExpandedBranch] = useState(null);
 
   // --- ANIMATED DRAWER STATE ---
   // Posisi awal di luar layar sebelah kiri (-DRAWER_WIDTH)
@@ -193,8 +525,17 @@ const ManagementDashboardScreen = ({navigation}) => {
   const [emptyStockSearch, setEmptyStockSearch] = useState('');
   const [emptyStockBranchFilter, setEmptyStockBranchFilter] = useState(''); // Untuk filter KDC
 
+  const [modalType, setModalType] = useState('SALES');
+
   // State untuk menyimpan daftar cabang dari database
   const [branchList, setBranchList] = useState([]);
+
+  const [dashboardBranchFilter, setDashboardBranchFilter] = useState('ALL'); // Default ALL
+  const [branchSelectorVisible, setBranchSelectorVisible] = useState(false); // Modal visibility
+
+  // STATE BARU UNTUK STOK MINUS
+  const [negativeStockList, setNegativeStockList] = useState([]);
+  const [loadingNegativeStock, setLoadingNegativeStock] = useState(false);
 
   const isMounted = useRef(true);
   const isHaris = userInfo?.kode?.toUpperCase() === 'HARIS';
@@ -228,12 +569,11 @@ const ManagementDashboardScreen = ({navigation}) => {
   // PanResponder untuk menangani geseran jari
   const panResponder = useRef(
     PanResponder.create({
-      // Tentukan kapan gesture handler aktif
       onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Gunakan showSidebar agar Estu bisa swipe
+        if (!showSidebar) return false;
+
         const {dx, moveX} = gestureState;
-        // Aktif jika:
-        // 1. Menu tertutup TAPI swipe dari pinggir kiri (edge swipe < 40px) ke kanan
-        // 2. Menu terbuka DAN swipe ke kiri
         if (!isDrawerOpen && moveX < 40 && dx > 10) return true;
         if (isDrawerOpen && dx < -10) return true;
         return false;
@@ -296,35 +636,43 @@ const ManagementDashboardScreen = ({navigation}) => {
   }, [navigation, isHaris, openDrawer]);
 
   // --- FETCH FUNCTIONS ---
-  const fetchTodayStats = useCallback(async () => {
-    try {
-      const res = await getDashboardTodayStatsApi(userToken);
-      if (isMounted.current) {
-        setTodayStats({
-          sales: res.data.todaySales || 0,
-          qty: Number(res.data.todayQty || 0),
-          trx: Number(res.data.todayTransactions || 0),
-        });
-        setLoadingStats(false);
+  const fetchTodayStats = useCallback(
+    async (filter = 'ALL') => {
+      try {
+        const branchParam = filter === 'ALL' ? '' : filter; // Backend minta string kosong atau kode
+        const res = await getDashboardTodayStatsApi(userToken, branchParam);
+        if (isMounted.current) {
+          setTodayStats({
+            sales: res.data.todaySales || 0,
+            qty: Number(res.data.todayQty || 0),
+            trx: Number(res.data.todayTransactions || 0),
+          });
+          setLoadingStats(false);
+        }
+      } catch (error) {
+        console.log('Err Stats:', error.message);
+        if (isMounted.current) setLoadingStats(false);
       }
-    } catch (error) {
-      console.log('Err Stats:', error.message);
-      if (isMounted.current) setLoadingStats(false);
-    }
-  }, [userToken]);
+    },
+    [userToken],
+  );
 
-  const fetchPiutang = useCallback(async () => {
-    try {
-      const res = await getDashboardPiutangApi(userToken);
-      if (isMounted.current) {
-        setPiutang(res.data.totalSisaPiutang || 0);
-        setLoadingPiutang(false);
+  const fetchPiutang = useCallback(
+    async (filter = 'ALL') => {
+      try {
+        const branchParam = filter === 'ALL' ? '' : filter;
+        const res = await getDashboardPiutangApi(userToken, branchParam);
+        if (isMounted.current) {
+          setPiutang(res.data.totalSisaPiutang || 0);
+          setLoadingPiutang(false);
+        }
+      } catch (error) {
+        console.log('Err Piutang:', error.message);
+        if (isMounted.current) setLoadingPiutang(false);
       }
-    } catch (error) {
-      console.log('Err Piutang:', error.message);
-      if (isMounted.current) setLoadingPiutang(false);
-    }
-  }, [userToken]);
+    },
+    [userToken],
+  );
 
   const fetchPiutangList = useCallback(async () => {
     if (userInfo.cabang !== 'KDC') {
@@ -364,47 +712,63 @@ const ManagementDashboardScreen = ({navigation}) => {
     }
   };
 
-  const fetchChart = useCallback(async () => {
-    try {
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .split('T')[0];
-      const res = await getDashboardSalesChartApi(
-        {startDate, endDate, groupBy: 'day', cabang: 'ALL'},
-        userToken,
-      );
-      if (isMounted.current && res.data?.length > 0) {
-        setSalesChart({
-          labels: res.data.map(d => {
-            const date = new Date(d.tanggal);
-            return `${date.getDate()}/${date.getMonth() + 1}`;
-          }),
-          data: res.data.map(d => d.total),
-        });
-        setLoadingChart(false);
-      }
-    } catch (error) {
-      console.log('Err Chart:', error.message);
-      if (isMounted.current) setLoadingChart(false);
-    }
-  }, [userToken]);
+  const fetchChart = useCallback(
+    async (filter = 'ALL') => {
+      try {
+        const endDate = new Date().toISOString().split('T')[0];
+        const startDate = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split('T')[0];
 
-  const fetchTargetSummary = useCallback(async () => {
-    try {
-      const res = await getDashboardTargetSummaryApi(userToken);
-      if (isMounted.current) {
-        setTargetSummary({
-          nominal: Number(res.data.nominal || 0),
-          target: Number(res.data.target || 0),
-        });
-        setLoadingTarget(false);
+        // LOG DEBUG: Pastikan filter yang dikirim benar
+        console.log('Fetching Chart with Filter:', filter);
+
+        const res = await getDashboardSalesChartApi(
+          {
+            startDate,
+            endDate,
+            groupBy: 'day',
+            cabang: filter, // <--- PENTING: Backend harus terima ini
+          },
+          userToken,
+        );
+
+        if (isMounted.current && res.data?.length > 0) {
+          setSalesChart({
+            labels: res.data.map(d => {
+              const dt = new Date(d.tanggal);
+              return `${dt.getDate()}/${dt.getMonth() + 1}`;
+            }),
+            data: res.data.map(d => d.total),
+          });
+          setLoadingChart(false);
+        }
+      } catch (e) {
+        if (isMounted.current) setLoadingChart(false);
       }
-    } catch (error) {
-      console.log('Err Target:', error.message);
-      if (isMounted.current) setLoadingTarget(false);
-    }
-  }, [userToken]);
+    },
+    [userToken], // Dependency aman
+  );
+
+  const fetchTargetSummary = useCallback(
+    async (filter = 'ALL') => {
+      try {
+        const branchParam = filter === 'ALL' ? '' : filter;
+        const res = await getDashboardTargetSummaryApi(userToken, branchParam);
+        if (isMounted.current) {
+          setTargetSummary({
+            nominal: Number(res.data.nominal || 0),
+            target: Number(res.data.target || 0),
+          });
+          setLoadingTarget(false);
+        }
+      } catch (error) {
+        console.log('Err Target:', error.message);
+        if (isMounted.current) setLoadingTarget(false);
+      }
+    },
+    [userToken],
+  );
 
   const fetchBranchPerformance = useCallback(async () => {
     if (userInfo.cabang !== 'KDC') {
@@ -426,55 +790,191 @@ const ManagementDashboardScreen = ({navigation}) => {
   const fetchBranches = useCallback(async () => {
     try {
       const res = await getCabangListApi(userToken);
-      console.log('DATA CABANG DARI BACKEND:', res.data.data); // <--- CEK LOG INI
+
+      console.log('--- DEBUG BRANCH RESPONSE ---');
+      // console.log(JSON.stringify(res.data, null, 2)); // Uncomment jika ingin lihat semua
+
+      // Cek struktur response (apakah di res.data atau res.data.data)
+      let listData = [];
+      if (Array.isArray(res.data)) {
+        listData = res.data; // Backend return langsung array: [{}, {}]
+      } else if (res.data && Array.isArray(res.data.data)) {
+        listData = res.data.data; // Backend return object: { success: true, data: [] }
+      } else if (res.data && Array.isArray(res.data.rows)) {
+        listData = res.data.rows; // Kadang backend pakai 'rows'
+      }
+
+      console.log('Jumlah Cabang Ditemukan:', listData.length);
 
       if (isMounted.current) {
-        setBranchList(res.data.data || []);
+        setBranchList(listData);
       }
     } catch (e) {
-      console.log('Gagal load cabang', e);
+      console.log('Gagal load cabang:', e);
     }
   }, [userToken]);
 
-  const loadAllData = useCallback(() => {
-    setLoadingStats(true);
-    setLoadingPiutang(true);
-    setLoadingChart(true);
-    setLoadingTarget(true);
-    setLoadingBranch(true);
-    setLoadingPiutangList(true);
-    setLoadingTopProducts(true);
-    setLoadingTrends(true);
+  const fetchNegativeStock = useCallback(
+    async (filter = 'ALL') => {
+      // Logic mapping filter frontend ke backend
+      // Backend mengharapkan kode cabang, atau 'ALL'/'KDC'
+      let branchParam = filter;
 
-    fetchTodayStats();
-    fetchPiutang();
-    fetchChart();
-    fetchTopProducts();
-    fetchTargetSummary();
-    fetchTrends();
-    if (userInfo.cabang === 'KDC') {
-      fetchBranchPerformance();
-      fetchPiutangList();
-      fetchBranches();
-    }
-  }, [
-    fetchTodayStats,
-    fetchPiutang,
-    fetchChart,
-    fetchTargetSummary,
-    fetchBranchPerformance,
-    fetchPiutangList,
-    fetchTopProducts,
-    fetchTrends,
-    userInfo.cabang,
-    fetchBranches,
-  ]);
+      // Jika user KDC dan filter 'ALL', kita kirim 'ALL' biar backend handle logic "Semua Cabang DC"
+      if (userInfo.cabang === 'KDC' && filter === 'ALL') {
+        branchParam = 'ALL';
+      }
+
+      try {
+        // Panggil API (Pastikan getDashboardNegativeStockApi sudah ada di ApiService)
+        const res = await getDashboardNegativeStockApi(userToken, branchParam);
+
+        if (isMounted.current) {
+          // Validasi data array
+          const data = Array.isArray(res.data.data) ? res.data.data : [];
+          setNegativeStockList(data);
+          setLoadingNegativeStock(false);
+        }
+      } catch (error) {
+        console.log('Err Negative Stock:', error);
+        if (isMounted.current) setLoadingNegativeStock(false);
+      }
+    },
+    [userToken, userInfo.cabang],
+  );
+
+  const loadAllData = useCallback(
+    filterOverride => {
+      // LOGIC: Jika ada override (dari pull refresh), pakai itu.
+      // Jika tidak, pakai state dashboardBranchFilter yang sedang aktif.
+      const currentFilter =
+        filterOverride !== undefined ? filterOverride : dashboardBranchFilter;
+
+      console.log('LOADING ALL DATA for:', currentFilter);
+
+      // Reset Loading
+      setLoadingStats(true);
+      setLoadingPiutang(true);
+      setLoadingChart(true);
+      setLoadingTarget(true);
+      setLoadingTopProducts(true);
+      setLoadingTrends(true);
+      setLoadingNegativeStock(true);
+
+      // Call APIs with Filter
+      const filterParam = currentFilter === 'ALL' ? '' : currentFilter; // Backend handle 'ALL' or empty string
+
+      // 1. Stats
+      getDashboardTodayStatsApi(userToken, filterParam)
+        .then(res => {
+          if (isMounted.current) {
+            setTodayStats({
+              sales: res.data.todaySales || 0,
+              qty: Number(res.data.todayQty || 0),
+              trx: Number(res.data.todayTransactions || 0),
+            });
+            setLoadingStats(false);
+          }
+        })
+        .catch(() => setLoadingStats(false));
+
+      // 2. Piutang (Total Sisa) - Tetap dipanggil biar angkanya update sesuai cabang
+      getDashboardPiutangApi(userToken, filterParam)
+        .then(res => {
+          if (isMounted.current) {
+            setPiutang(res.data.totalSisaPiutang || 0);
+            setLoadingPiutang(false);
+          }
+        })
+        .catch(() => setLoadingPiutang(false));
+
+      // 3. Chart
+      fetchChart(currentFilter);
+
+      // 4. Target
+      getDashboardTargetSummaryApi(userToken, filterParam)
+        .then(res => {
+          if (isMounted.current) {
+            setTargetSummary({
+              nominal: Number(res.data.nominal || 0),
+              target: Number(res.data.target || 0),
+            });
+            setLoadingTarget(false);
+          }
+        })
+        .catch(() => setLoadingTarget(false));
+
+      // 5. Top Products
+      getDashboardTopSellingApi(userToken, currentFilter)
+        .then(res => {
+          if (isMounted.current) {
+            setTopProducts(res.data.data || []);
+            setLoadingTopProducts(false);
+          }
+        })
+        .catch(() => setLoadingTopProducts(false));
+
+      // 6. Trends
+      getDashboardTrendsApi(userToken, currentFilter)
+        .then(res => {
+          if (isMounted.current) {
+            setTrends(res.data.data || {kain: [], lengan: []});
+            setLoadingTrends(false);
+          }
+        })
+        .catch(() => setLoadingTrends(false));
+
+      fetchNegativeStock(currentFilter);
+
+      // 7. Data KDC Only (Ranking & List Piutang)
+      // HANYA JIKA FILTER = ALL
+      if (userInfo.cabang === 'KDC') {
+        // Panggil fetchBranches agar list cabang terisi
+        fetchBranches();
+
+        if (currentFilter === 'ALL') {
+          setLoadingBranch(true);
+          getDashboardBranchPerformanceApi(userToken).then(res => {
+            if (isMounted.current) {
+              setBranchPerformance(res.data || []);
+              setLoadingBranch(false);
+            }
+          });
+
+          setLoadingPiutangList(true);
+          getDashboardPiutangPerCabangApi(userToken).then(res => {
+            if (isMounted.current) {
+              setPiutangList(res.data || []);
+              setLoadingPiutangList(false);
+            }
+          });
+        }
+      }
+    },
+    [
+      userToken,
+      userInfo.cabang,
+      fetchChart,
+      fetchNegativeStock,
+      // TAMBAHKAN DUA INI UNTUK HILANGKAN WARNING:
+      dashboardBranchFilter,
+      fetchBranches,
+    ],
+  );
 
   useEffect(() => {
     if (userToken) {
+      // Panggil tanpa argumen, loadAllData akan mengambil state dashboardBranchFilter terbaru
       loadAllData();
     }
-  }, [userToken, loadAllData]);
+  }, [userToken, dashboardBranchFilter, loadAllData]);
+
+  const handleFilterChange = branchCode => {
+    // Cukup update state.
+    // useEffect akan mendeteksi perubahan ini dan memanggil loadAllData() otomatis.
+    setDashboardBranchFilter(branchCode);
+    setBranchSelectorVisible(false);
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -499,41 +999,119 @@ const ManagementDashboardScreen = ({navigation}) => {
     fetchTopProducts,
   ]);
 
-  // --- LOGIC OTORISASI ---
-  const handleGenerateOtorisasi = () => {
-    if (!otoKode) return;
-    const nKode = parseFloat(otoKode);
-    if (isNaN(nKode)) {
-      Alert.alert('Error', 'Kode harus berupa angka');
-      return;
-    }
-    const result = nKode * 21 + 53 * 4;
-    setOtoResult(`${result}H`);
-  };
-
-  const handleShareOtorisasi = async () => {
-    if (!otoResult) return;
+  // 1. Fetch Pending Requests
+  const fetchPendingAuth = useCallback(async () => {
+    setLoadingAuth(true);
     try {
-      await Share.share({message: otoResult});
-    } catch (error) {
-      Alert.alert('Error', error.message);
-    }
-  };
-
-  // Fetch Top Products
-  const fetchTopProducts = useCallback(async () => {
-    try {
-      // Jika user KDC dan mau filter cabang tertentu, bisa dioper di parameter ke-2
-      const res = await getDashboardTopSellingApi(userToken, 'ALL');
+      const res = await getPendingAuthorizationApi(userToken);
       if (isMounted.current) {
-        setTopProducts(res.data.data || []);
-        setLoadingTopProducts(false);
+        setAuthList(res.data.data || []); // Pastikan akses .data.data sesuai struktur JSON backend
       }
     } catch (error) {
-      console.log('Err Top Products:', error.message);
-      if (isMounted.current) setLoadingTopProducts(false);
+      console.log('Err Auth List FULL:', error);
+      if (error.response) {
+        // Cek status code
+        console.log('Status:', error.response.status);
+        console.log('Data:', error.response.data);
+
+        // Jika 401/403, berarti token masalah atau middleware menolak
+        // Jika 404, berarti URL API salah/belum terdaftar di index.js
+        // Jika 500, berarti query SQL salah
+
+        if (error.response.status !== 401) {
+          // Jangan logout jika errornya bukan 401 (Unauthorized)
+          Alert.alert('Error', `Gagal memuat: ${error.response.status}`);
+        }
+      }
+    } finally {
+      if (isMounted.current) setLoadingAuth(false);
     }
   }, [userToken]);
+
+  // [BARU] Listener untuk menangkap klik Notifikasi
+  useEffect(() => {
+    // Gunakan Optional Chaining ganda agar aman
+    if (route?.params?.openApproval) {
+      console.log('Membuka Approval dari Notifikasi');
+
+      setOtorisasiVisible(true);
+      fetchPendingAuth();
+
+      // Reset params
+      navigation.setParams({openApproval: null});
+    }
+  }, [route, fetchPendingAuth, navigation]);
+
+  // [BARU] Logic Pengelompokan Data per Cabang
+  const groupedAuthList = useMemo(() => {
+    if (!authList.length) return [];
+
+    const groups = {};
+    authList.forEach(item => {
+      const cab = item.o_cab || 'LAINNYA'; // Fallback jika null
+      if (!groups[cab]) {
+        groups[cab] = [];
+      }
+      groups[cab].push(item);
+    });
+
+    // Ubah ke array agar bisa dirender FlatList: [{ branch: 'K01', data: [...] }, ...]
+    return Object.keys(groups)
+      .sort()
+      .map(key => ({
+        branch: key,
+        data: groups[key],
+      }));
+  }, [authList]);
+
+  // [BARU] Toggle Expand/Collapse Cabang
+  const toggleBranch = useCallback(branchCode => {
+    setExpandedBranch(prev => (prev === branchCode ? null : branchCode));
+  }, []);
+
+  // 2. Process Request (Approve/Reject)
+  const handleProcessAuth = useCallback(
+    async (item, action) => {
+      setProcessingAuth(item.o_nomor);
+      try {
+        await processAuthorizationApi(item.o_nomor, action, userToken);
+
+        ToastAndroid.show(
+          `Otorisasi berhasil di-${action === 'APPROVE' ? 'setujui' : 'tolak'}`,
+          ToastAndroid.SHORT,
+        );
+
+        // Update list lokal
+        setAuthList(prev => prev.filter(req => req.o_nomor !== item.o_nomor));
+      } catch (error) {
+        console.log('Err Process Auth:', error);
+        const msg =
+          error.response?.data?.message || 'Gagal memproses otorisasi';
+        Alert.alert('Gagal', msg);
+      } finally {
+        if (isMounted.current) setProcessingAuth(null);
+      }
+    },
+    [userToken],
+  );
+
+  // Fetch Top Products
+  const fetchTopProducts = useCallback(
+    async (filter = 'ALL') => {
+      try {
+        // Jika user KDC dan mau filter cabang tertentu, bisa dioper di parameter ke-2
+        const res = await getDashboardTopSellingApi(userToken, filter);
+        if (isMounted.current) {
+          setTopProducts(res.data.data || []);
+          setLoadingTopProducts(false);
+        }
+      } catch (error) {
+        console.log('Err Top Products:', error.message);
+        if (isMounted.current) setLoadingTopProducts(false);
+      }
+    },
+    [userToken],
+  );
 
   // Handler Saat Produk Diklik
   const handleCheckStock = async item => {
@@ -559,38 +1137,91 @@ const ManagementDashboardScreen = ({navigation}) => {
     }
   };
 
-  // Function Fetch
-  const fetchTrends = useCallback(async () => {
-    try {
-      const res = await getDashboardTrendsApi(userToken, 'ALL');
-      if (isMounted.current) {
-        setTrends(res.data.data || {kain: [], lengan: []});
-        setLoadingTrends(false);
-      }
-    } catch (error) {
-      console.log('Err Trends:', error.message);
-      if (isMounted.current) setLoadingTrends(false);
-    }
-  }, [userToken]);
+  // Handler 1: Untuk Top Product (Melihat Penjualan - HIJAU)
+  const handleCheckSalesDetail = async item => {
+    setModalType('SALES'); // Set tipe ke SALES
+    setSelectedProductItem(item);
+    setStockModalVisible(true);
+    setLoadingStockSpread(true);
+    setStockSpreadList([]);
 
-  // Function Load Data
-  const fetchEmptyStock = async (search = '', branch = '') => {
-    setLoadingEmptyStock(true);
     try {
-      // Gunakan branch filter jika ada, atau default user branch
-      const target =
-        branch || (userInfo.cabang === 'KDC' ? 'K01' : userInfo.cabang);
-
-      const res = await getEmptyStockRegulerApi(userToken, search, target);
-      if (isMounted.current) {
-        setEmptyStockList(res.data.data || []);
-      }
+      const res = await getDashboardProductSalesSpreadApi(
+        item.KODE,
+        item.UKURAN,
+        userToken,
+      );
+      if (isMounted.current) setStockSpreadList(res.data.data || []);
     } catch (error) {
-      console.log('Err Empty Stock:', error.message);
+      console.log('Err Sales Spread:', error);
     } finally {
-      if (isMounted.current) setLoadingEmptyStock(false);
+      if (isMounted.current) setLoadingStockSpread(false);
     }
   };
+
+  // Handler 2: Untuk Stok Kosong (Melihat Stok Real - BIRU) -> TAMBAHKAN INI
+  const handleCheckRealStock = async item => {
+    setModalType('STOCK'); // Set tipe ke STOCK
+    setSelectedProductItem(item);
+    setStockModalVisible(true);
+    setLoadingStockSpread(true);
+    setStockSpreadList([]);
+
+    try {
+      // Panggil API Stok (tmasterstok)
+      const res = await getDashboardStockSpreadApi(
+        item.kode || item.KODE, // Sesuaikan casing properti dari list empty stock
+        item.ukuran || item.UKURAN,
+        userToken,
+      );
+      if (isMounted.current) setStockSpreadList(res.data.data || []);
+    } catch (error) {
+      console.log('Err Stock Spread:', error);
+    } finally {
+      if (isMounted.current) setLoadingStockSpread(false);
+    }
+  };
+
+  // Function Fetch
+  const fetchTrends = useCallback(
+    async (filter = 'ALL') => {
+      try {
+        const res = await getDashboardTrendsApi(userToken, filter);
+        if (isMounted.current) {
+          setTrends(res.data.data || {kain: [], lengan: []});
+          setLoadingTrends(false);
+        }
+      } catch (error) {
+        console.log('Err Trends:', error.message);
+        if (isMounted.current) setLoadingTrends(false);
+      }
+    },
+    [userToken],
+  );
+
+  // Function Load Data
+  // 1. Fetch Stok Kosong (Dipanggil oleh Modal)
+  // Bungkus dengan useCallback
+  const fetchEmptyStock = useCallback(
+    async (search = '', branch = '') => {
+      setLoadingEmptyStock(true);
+      try {
+        const target =
+          branch || (userInfo.cabang === 'KDC' ? 'K01' : userInfo.cabang);
+
+        // Debug log untuk memastikan tidak looping
+        // console.log(`Fetching Empty Stock...`);
+
+        const res = await getEmptyStockRegulerApi(userToken, search, target);
+        if (isMounted.current) setEmptyStockList(res.data.data || []);
+      } catch (error) {
+        console.log('Err Empty Stock:', error);
+      } finally {
+        if (isMounted.current) setLoadingEmptyStock(false);
+      }
+    },
+    [userToken, userInfo.cabang],
+  );
 
   // Handler Buka Menu
   const handleOpenEmptyStock = () => {
@@ -606,24 +1237,29 @@ const ManagementDashboardScreen = ({navigation}) => {
   // --- RENDER COMPONENTS ---
 
   const renderHeader = () => (
-    <LinearGradient colors={['#1976D2', '#1565C0']} style={styles.headerCard}>
+    <LinearGradient colors={['#1565C0', '#42A5F5']} style={styles.headerCard}>
       <View style={styles.headerTop}>
-        <View>
+        <View style={{flex: 1}}>
           <Text style={styles.greetingText}>Halo, {userInfo.nama}</Text>
           <Text style={styles.subGreeting}>
             {userInfo.cabang === 'KDC' ? 'Head Office' : userInfo.cabang}
           </Text>
         </View>
-        <View style={styles.headerIconBg}>
-          <Icon name="bar-chart-2" size={24} color="#fff" />
-        </View>
+
+        {showSidebar && (
+          <TouchableOpacity
+            onPress={openDrawer}
+            style={[styles.headerIconBg, {marginLeft: 10}]}>
+            <Icon name="menu" size={24} color="#fff" />
+          </TouchableOpacity>
+        )}
       </View>
+
       <View style={styles.omsetContainer}>
         <Text style={styles.omsetLabel}>Omset Hari Ini</Text>
         {loadingStats ? (
           <ActivityIndicator color="#fff" style={{alignSelf: 'flex-start'}} />
         ) : (
-          /* GANTI TEXT BIASA DENGAN COUNTUP */
           <CountUp
             value={todayStats.sales}
             formatter={formatRupiah}
@@ -631,31 +1267,22 @@ const ManagementDashboardScreen = ({navigation}) => {
           />
         )}
       </View>
+
       <View style={styles.headerStatsRow}>
         <View style={styles.headerStatItem}>
           <Icon name="package" size={14} color="#BBDEFB" />
-          {loadingStats ? (
-            <Text style={styles.headerStatValue}>...</Text>
-          ) : (
-            /* ANIMASI QTY (tanpa format rupiah, cuma angka) */
-            <View style={{flexDirection: 'row'}}>
-              <CountUp value={todayStats.qty} style={styles.headerStatValue} />
-              <Text style={styles.headerStatValue}> Pcs</Text>
-            </View>
-          )}
+          <View style={{flexDirection: 'row'}}>
+            <CountUp value={todayStats.qty} style={styles.headerStatValue} />
+            <Text style={styles.headerStatValue}> Pcs</Text>
+          </View>
         </View>
         <View style={styles.verticalDivider} />
         <View style={styles.headerStatItem}>
           <Icon name="shopping-cart" size={14} color="#BBDEFB" />
-          {loadingStats ? (
-            <Text style={styles.headerStatValue}>...</Text>
-          ) : (
-            /* ANIMASI TRANSAKSI */
-            <View style={{flexDirection: 'row'}}>
-              <CountUp value={todayStats.trx} style={styles.headerStatValue} />
-              <Text style={styles.headerStatValue}> Transaksi</Text>
-            </View>
-          )}
+          <View style={{flexDirection: 'row'}}>
+            <CountUp value={todayStats.trx} style={styles.headerStatValue} />
+            <Text style={styles.headerStatValue}> Transaksi</Text>
+          </View>
         </View>
       </View>
     </LinearGradient>
@@ -663,11 +1290,23 @@ const ManagementDashboardScreen = ({navigation}) => {
 
   const renderPiutangSection = () => {
     if (userInfo.cabang !== 'KDC') return null;
+    const isFiltered = dashboardBranchFilter !== 'ALL';
     return (
       <View style={styles.sectionContainer}>
         <TouchableOpacity
           activeOpacity={0.8}
-          onPress={() => setBranchModalVisible(true)}>
+          onPress={() => {
+            if (isFiltered) {
+              // KONDISI 1: Jika sudah difilter cabang tertentu -> Buka Detail Invoice
+              handleOpenDetail({
+                cabang_kode: dashboardBranchFilter,
+                cabang_nama: `Cabang ${dashboardBranchFilter}`,
+              });
+            } else {
+              // KONDISI 2: Jika 'ALL' -> Buka List Cabang dulu
+              setBranchModalVisible(true);
+            }
+          }}>
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <View style={[styles.iconBox, {backgroundColor: '#FFF3E0'}]}>
@@ -676,7 +1315,9 @@ const ManagementDashboardScreen = ({navigation}) => {
               <View style={{flex: 1}}>
                 <Text style={styles.cardTitle}>Total Piutang Berjalan</Text>
                 <Text style={styles.cardSubtitle}>
-                  Klik untuk melihat rincian per cabang
+                  {isFiltered
+                    ? 'Klik untuk melihat detail invoice'
+                    : 'Klik untuk melihat rincian per cabang'}
                 </Text>
               </View>
               <Icon name="chevron-right" size={20} color="#CCC" />
@@ -708,7 +1349,10 @@ const ManagementDashboardScreen = ({navigation}) => {
       percentage >= 100 ? '#4CAF50' : percentage >= 75 ? '#2196F3' : '#F44336';
     return (
       <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle}>Tren & Target</Text>
+        <Text style={styles.sectionTitle}>
+          Tren & Target (
+          {dashboardBranchFilter === 'ALL' ? 'Semua' : dashboardBranchFilter})
+        </Text>
         <View
           style={[
             styles.card,
@@ -722,6 +1366,7 @@ const ManagementDashboardScreen = ({navigation}) => {
             />
           ) : (
             <LineChart
+              key={dashboardBranchFilter}
               data={{
                 labels: salesChart.labels,
                 datasets: [{data: salesChart.data}],
@@ -879,9 +1524,8 @@ const ManagementDashboardScreen = ({navigation}) => {
   };
 
   const renderTopProducts = () => {
-    // Cari nilai tertinggi untuk referensi lebar bar (100%)
     const maxQty = topProducts.length > 0 ? topProducts[0].TOTAL : 1;
-
+    const isFiltered = dashboardBranchFilter !== 'ALL';
     return (
       <View style={styles.sectionContainer}>
         <Text style={styles.sectionTitle}>🔥 Produk Terlaris (Bulan Ini)</Text>
@@ -894,26 +1538,23 @@ const ManagementDashboardScreen = ({navigation}) => {
             </Text>
           ) : (
             topProducts.map((item, index) => {
-              // Hitung persentase lebar bar
               const barWidth = (item.TOTAL / maxQty) * 100;
-
               return (
                 <TouchableOpacity
                   key={`${item.KODE}-${index}`}
                   style={styles.topProductItem}
                   activeOpacity={0.7}
-                  onPress={() => handleCheckStock(item)} // KLIK DISINI
-                >
-                  {/* 1. Ranking Badge */}
+                  disabled={isFiltered}
+                  onPress={() => handleCheckSalesDetail(item)}>
                   <View
                     style={[
                       styles.rankBadgeMini,
                       index === 0
-                        ? {backgroundColor: '#FFD700'} // Emas
+                        ? {backgroundColor: '#FFD700'}
                         : index === 1
-                        ? {backgroundColor: '#C0C0C0'} // Perak
+                        ? {backgroundColor: '#C0C0C0'}
                         : index === 2
-                        ? {backgroundColor: '#CD7F32'} // Perunggu
+                        ? {backgroundColor: '#CD7F32'}
                         : {backgroundColor: '#F5F5F5'},
                     ]}>
                     <Text
@@ -924,8 +1565,6 @@ const ManagementDashboardScreen = ({navigation}) => {
                       {index + 1}
                     </Text>
                   </View>
-
-                  {/* 2. Info Barang */}
                   <View style={{flex: 1, marginHorizontal: 12}}>
                     <Text style={styles.productName} numberOfLines={1}>
                       {item.NAMA}
@@ -933,20 +1572,24 @@ const ManagementDashboardScreen = ({navigation}) => {
                     <Text style={styles.productSize}>
                       Ukuran: {item.UKURAN} • Kode: {item.KODE}
                     </Text>
-
-                    {/* Visual Bar */}
                     <View style={styles.barTrack}>
                       <View style={[styles.barFill, {width: `${barWidth}%`}]} />
                     </View>
                   </View>
-
-                  {/* 3. Total & Action */}
                   <View style={{alignItems: 'flex-end'}}>
                     <Text style={styles.totalQty}>{item.TOTAL} Pcs</Text>
-                    <View style={styles.checkStockBadge}>
-                      <Icon name="search" size={10} color="#fff" />
-                      <Text style={styles.checkStockText}>Stok</Text>
-                    </View>
+
+                    {/* 3. Tampilkan Badge 'Info' HANYA jika filter = ALL */}
+                    {!isFiltered && (
+                      <View
+                        style={[
+                          styles.checkStockBadge,
+                          {backgroundColor: '#2E7D32'},
+                        ]}>
+                        <Icon name="bar-chart-2" size={10} color="#fff" />
+                        <Text style={styles.checkStockText}>Info</Text>
+                      </View>
+                    )}
                   </View>
                 </TouchableOpacity>
               );
@@ -1100,34 +1743,203 @@ const ManagementDashboardScreen = ({navigation}) => {
     );
   };
 
+  const renderItem = useCallback(
+    ({item}) => (
+      <BranchGroup
+        item={item}
+        expandedBranch={expandedBranch}
+        onToggle={toggleBranch}
+        onProcess={handleProcessAuth}
+        processingId={processingAuth}
+      />
+    ),
+    [expandedBranch, processingAuth, toggleBranch, handleProcessAuth],
+  );
+
+  const renderNegativeStock = () => {
+    // Safety check: Jika loading masih false tapi data null, anggap kosong
+    const data = negativeStockList || [];
+
+    return (
+      <View style={styles.sectionContainer}>
+        {/* Header Section */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: 12,
+            marginLeft: 4,
+          }}>
+          <Icon
+            name="alert-triangle"
+            size={18}
+            color="#D32F2F"
+            style={{marginRight: 8}}
+          />
+          <Text style={styles.sectionTitleWithoutMargin}>
+            Stok Minus (Perhatian)
+          </Text>
+        </View>
+
+        <View style={[styles.card, {padding: 0}]}>
+          {loadingNegativeStock ? (
+            <ActivityIndicator
+              size="small"
+              color="#D32F2F"
+              style={{margin: 20}}
+            />
+          ) : data.length === 0 ? (
+            <View style={{padding: 20, alignItems: 'center'}}>
+              <Icon name="check-circle" size={40} color="#4CAF50" />
+              <Text style={{textAlign: 'center', color: '#666', marginTop: 8}}>
+                Aman! Tidak ada stok minus.
+              </Text>
+            </View>
+          ) : (
+            /* Gunakan Fragment atau map langsung */
+            data.map((item, index) => {
+              // Tampilkan badge cabang jika filter = ALL
+              const showBranchBadge = dashboardBranchFilter === 'ALL';
+
+              return (
+                <View
+                  key={`${item.kode}-${item.ukuran}-${index}`}
+                  style={styles.negativeItem}>
+                  {/* Kiri: Info Barang */}
+                  <View style={{flex: 1, marginRight: 10}}>
+                    <Text style={styles.productName} numberOfLines={2}>
+                      {item.nama}
+                    </Text>
+
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        marginTop: 4,
+                      }}>
+                      <Text style={styles.productSize}>
+                        {item.ukuran} • {item.kode}
+                      </Text>
+
+                      {/* Render Conditional yang Aman */}
+                      {showBranchBadge ? (
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            marginLeft: 8,
+                            backgroundColor: '#EEEEEE',
+                            paddingHorizontal: 6,
+                            borderRadius: 4,
+                          }}>
+                          <Text
+                            style={{
+                              fontSize: 10,
+                              color: '#616161',
+                              fontWeight: 'bold',
+                            }}>
+                            {item.cabang_nama || item.cabang_kode}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+
+                  {/* Kanan: Stok Minus (Merah) */}
+                  <View style={styles.negativeBadge}>
+                    <Text style={styles.negativeText}>{item.stok}</Text>
+                  </View>
+                </View>
+              );
+            })
+          )}
+
+          {/* Footer Card - Gunakan pengecekan length > 0 */}
+          {data.length > 0 && (
+            <View style={styles.cardFooter}>
+              <Text style={{fontSize: 10, color: '#999'}}>
+                Segera lakukan penyesuaian stok (SO)
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View
       style={{flex: 1, backgroundColor: '#F5F7FA'}}
-      {...(isHaris ? panResponder.panHandlers : {})}>
-      <StatusBar barStyle="light-content" backgroundColor="#1565C0" />
+      {...(showSidebar ? panResponder.panHandlers : {})}>
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle="light-content"
+      />
       <ScrollView
         contentContainerStyle={{paddingBottom: 80}}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }>
         {renderHeader()}
-        <View style={{marginTop: -30, paddingHorizontal: 16}}>
+        <View style={{marginTop: -30, paddingHorizontal: 16, zIndex: 10}}>
+          {/* DROPDOWN FILTER (Hanya KDC) */}
+          {userInfo.cabang === 'KDC' && (
+            <View style={{alignItems: 'flex-end', marginBottom: 10}}>
+              <TouchableOpacity
+                style={styles.branchDropdown}
+                onPress={() => {
+                  // Tambahkan log untuk debug
+                  console.log('Tombol Filter Diklik');
+                  setBranchSelectorVisible(true);
+                }}
+                activeOpacity={0.8} // Tambahkan feedback visual
+              >
+                <Icon
+                  name="map-pin"
+                  size={14}
+                  color="#1565C0"
+                  style={{marginRight: 6}}
+                />
+                <Text style={styles.branchDropdownText}>
+                  {dashboardBranchFilter === 'ALL'
+                    ? 'Semua Cabang'
+                    : dashboardBranchFilter}
+                </Text>
+                <Icon
+                  name="chevron-down"
+                  size={16}
+                  color="#1565C0"
+                  style={{marginLeft: 4}}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* CARD PIUTANG */}
+          {/* Tetap dirender, datanya menyesuaikan filter */}
           {renderPiutangSection()}
         </View>
+        {/* 3. Chart & Target (Selalu Tampil, datanya berubah ikut filter) */}
         {renderChartAndTarget()}
-        {renderBranchRanking()}
-
-        {/* Insight Atribut dulu */}
+        {/* 4. Ranking Cabang */}
+        {/* LOGIC: Sembunyikan jika sedang memfilter 1 cabang */}
+        {dashboardBranchFilter === 'ALL' && renderBranchRanking()}
+        {/* 5. Analisa Tren (Selalu Tampil, datanya berubah ikut filter) */}
         {renderProductTrends()}
-
-        {/* Baru Detail Top Produk */}
+        {/* 6. Top Produk (Selalu Tampil, datanya berubah ikut filter) */}
         {renderTopProducts()}
+        {/* 7. Stok Minus [BARU] */}
+        {renderNegativeStock()}
+
+        {/* Spacer Akhir */}
+        <View style={{height: 20}} />
       </ScrollView>
 
-      {/* --- SIDE MENU DRAWER (CUSTOM ANIMATED VIEW) --- */}
-      {isHaris && (
+      {/* --- SIDEBAR DRAWER --- */}
+      {showSidebar && (
         <>
-          {/* Backdrop (Dark Overlay) */}
+          {/* Backdrop */}
           {isDrawerOpen && (
             <TouchableOpacity
               style={StyleSheet.absoluteFill}
@@ -1145,96 +1957,144 @@ const ManagementDashboardScreen = ({navigation}) => {
               styles.drawerContainer,
               {transform: [{translateX: drawerTranslateX}]},
             ]}>
-            <View style={styles.drawerHeader}>
-              <Text style={styles.drawerTitle}>Menu Manajemen</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.drawerItem}
-              onPress={() => {
-                closeDrawer();
-                setTimeout(() => setOtorisasiVisible(true), 300);
-              }}>
-              <Icon
-                name="key"
-                size={20}
-                color="#1976D2"
-                style={{marginRight: 15}}
-              />
-              <Text style={styles.drawerItemText}>Otorisasi</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.drawerItem}
-              onPress={handleOpenEmptyStock} // <--- Action Baru
-            >
-              <Icon
-                name="alert-octagon"
-                size={20}
-                color="#D32F2F"
-                style={{marginRight: 15}}
-              />
-              <Text style={styles.drawerItemText}>Laporan Stok Kosong</Text>
-            </TouchableOpacity>
-          </Animated.View>
+            <View style={{flex: 1}}>
+              <View style={styles.drawerHeader}>
+                <View style={styles.drawerAvatar}>
+                  <Text style={styles.avatarText}>
+                    {userInfo.nama.charAt(0)}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={styles.drawerName}>{userInfo.nama}</Text>
+                  <Text style={styles.drawerRole}>Manager</Text>
+                </View>
+              </View>
 
-          {/* Edge Swipe Detector (Invisible View at Left Edge) */}
-          {!isDrawerOpen && (
-            <View
-              style={styles.edgeSwipeArea}
-              // Kita bisa attach panResponder di sini jika ingin spesifik,
-              // tapi kita sudah attach di parent View utama.
-            />
-          )}
+              <View style={{marginTop: 20}}>
+                <Text style={styles.drawerSectionTitle}>Aplikasi</Text>
+
+                {/* MENU OTORISASI: Hanya muncul jika canAuthorize = true (Haris/Darul) */}
+                {canAuthorize && (
+                  <TouchableOpacity
+                    style={styles.drawerItem}
+                    onPress={() => {
+                      closeDrawer();
+                      setOtorisasiVisible(true);
+                      fetchPendingAuth(); // [NEW] Fetch data when opening
+                    }}>
+                    <Icon
+                      name="check-circle" // Changed icon to match 'Approval'
+                      size={20}
+                      color="#546E7A"
+                      style={{marginRight: 15}}
+                    />
+                    <Text style={styles.drawerItemText}>
+                      Otorisasi (Approval)
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* MENU LAIN: Muncul untuk semua yang punya akses sidebar (termasuk Estu) */}
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeDrawer();
+                    setEmptyStockModalVisible(true);
+                  }}>
+                  <Icon
+                    name="alert-octagon"
+                    size={20}
+                    color="#546E7A"
+                    style={{marginRight: 15}}
+                  />
+                  <Text style={styles.drawerItemText}>Laporan Stok Kosong</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.drawerFooter}>
+              <TouchableOpacity style={styles.logoutButton} onPress={logout}>
+                <Icon
+                  name="log-out"
+                  size={20}
+                  color="#D32F2F"
+                  style={{marginRight: 10}}
+                />
+                <Text style={[styles.drawerItemText, {color: '#D32F2F'}]}>
+                  Keluar
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.versionText}>Versi {appVersion}</Text>
+            </View>
+          </Animated.View>
         </>
       )}
 
-      {/* --- MODAL OTORISASI --- */}
-      <Modal
-        visible={otorisasiVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setOtorisasiVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, {height: 'auto', minHeight: 320}]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Generate Otorisasi</Text>
-              <TouchableOpacity onPress={() => setOtorisasiVisible(false)}>
-                <Icon name="x" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
+      <BranchSelectorModal
+        visible={branchSelectorVisible}
+        onClose={() => setBranchSelectorVisible(false)}
+        branches={branchList}
+        selected={dashboardBranchFilter}
+        onSelect={handleFilterChange}
+      />
 
-            <View style={{padding: 20}}>
-              <Text style={styles.label}>Kode Input:</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Masukkan Kode Angka"
-                keyboardType="numeric"
-                value={otoKode}
-                onChangeText={setOtoKode}
-              />
-
-              <TouchableOpacity
-                style={[styles.btnPrimary, {marginTop: 15}]}
-                onPress={handleGenerateOtorisasi}>
-                <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>
-                  GENERATE
-                </Text>
-              </TouchableOpacity>
-
-              <View style={{marginTop: 25}}>
-                <Text style={styles.label}>Hasil Otorisasi:</Text>
-                <View style={styles.resultBox}>
-                  <Text style={styles.resultText}>{otoResult || '...'}</Text>
-                  {otoResult !== '' && (
-                    <TouchableOpacity onPress={handleShareOtorisasi}>
-                      <Icon name="share-2" size={24} color="#1976D2" />
-                    </TouchableOpacity>
-                  )}
+      {/* --- MODAL OTORISASI (Hanya dirender jika punya akses, untuk keamanan extra) --- */}
+      {canAuthorize && (
+        <Modal
+          visible={otorisasiVisible}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setOtorisasiVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, {height: '80%'}]}>
+              {/* Taller modal */}
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Daftar Persetujuan</Text>
+                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                  {/* Refresh Button */}
+                  <TouchableOpacity
+                    onPress={fetchPendingAuth}
+                    style={{marginRight: 15}}>
+                    <Icon name="refresh-cw" size={20} color="#1976D2" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setOtorisasiVisible(false)}>
+                    <Icon name="x" size={24} color="#333" />
+                  </TouchableOpacity>
                 </View>
               </View>
+              {loadingAuth ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#1976D2" />
+                  <Text style={{marginTop: 10, color: '#666'}}>
+                    Memuat data...
+                  </Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={groupedAuthList}
+                  keyExtractor={item => item.branch}
+                  renderItem={renderItem}
+                  // [OPTIMASI FLATLIST WAJIB]
+                  initialNumToRender={5} // Render 5 item pertama saja agar cepat muncul
+                  windowSize={5} // Kurangi memori window render (default 21)
+                  maxToRenderPerBatch={5} // Batasi render per batch
+                  removeClippedSubviews={true} // Hapus view yang tidak terlihat dari memori (Android)
+                  updateCellsBatchingPeriod={50}
+                  contentContainerStyle={{padding: 16}}
+                  ListEmptyComponent={
+                    <View style={styles.emptyContainer}>
+                      <Icon name="check-square" size={48} color="#ddd" />
+                      <Text style={styles.emptyText}>
+                        Tidak ada permintaan pending.
+                      </Text>
+                    </View>
+                  }
+                />
+              )}
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
 
       {/* --- MODAL PIUTANG LIST & DETAIL (TETAP SAMA) --- */}
       <Modal
@@ -1311,7 +2171,7 @@ const ManagementDashboardScreen = ({navigation}) => {
             ) : (
               <FlatList
                 data={detailInvoices}
-                keyExtractor={(item, i) => item.invoice + i}
+                keyExtractor={(item, index) => `${item.invoice}-${index}`}
                 contentContainerStyle={{padding: 16}}
                 renderItem={({item}) => (
                   <View style={styles.invoiceItem}>
@@ -1345,7 +2205,7 @@ const ManagementDashboardScreen = ({navigation}) => {
         </View>
       </Modal>
 
-      {/* --- MODAL CEK STOK (INTERAKTIF) --- */}
+      {/* --- MODAL RINCIAN PENJUALAN (DULU CEK STOK) --- */}
       <Modal
         visible={stockModalVisible}
         transparent={true}
@@ -1356,9 +2216,16 @@ const ManagementDashboardScreen = ({navigation}) => {
             style={[styles.modalContent, {height: 'auto', maxHeight: '60%'}]}>
             <View style={styles.modalHeader}>
               <View style={{flex: 1}}>
-                <Text style={styles.modalTitle}>Sebaran Stok</Text>
+                {/* JUDUL DINAMIS */}
+                <Text style={styles.modalTitle}>
+                  {modalType === 'SALES'
+                    ? 'Rincian Penjualan Cabang'
+                    : 'Sebaran Stok Real'}
+                </Text>
                 <Text style={{fontSize: 12, color: '#666', marginTop: 2}}>
-                  {selectedProductItem?.NAMA} ({selectedProductItem?.UKURAN})
+                  {selectedProductItem?.NAMA ||
+                    selectedProductItem?.nama_barang}{' '}
+                  ({selectedProductItem?.UKURAN || selectedProductItem?.ukuran})
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setStockModalVisible(false)}>
@@ -1369,16 +2236,18 @@ const ManagementDashboardScreen = ({navigation}) => {
             {loadingStockSpread ? (
               <ActivityIndicator
                 size="large"
-                color="#1976D2"
+                color={modalType === 'SALES' ? '#2E7D32' : '#1976D2'} // Warna Spinner Dinamis
                 style={{margin: 30}}
               />
             ) : (
               <ScrollView contentContainerStyle={{padding: 20}}>
                 {stockSpreadList.length === 0 ? (
                   <View style={{alignItems: 'center', padding: 20}}>
-                    <Icon name="alert-circle" size={40} color="#ccc" />
+                    <Icon name="info" size={40} color="#ccc" />
                     <Text style={{color: '#888', marginTop: 10}}>
-                      Stok habis di semua cabang (Master Stok).
+                      {modalType === 'SALES'
+                        ? 'Belum ada data penjualan.'
+                        : 'Stok kosong di semua cabang.'}
                     </Text>
                   </View>
                 ) : (
@@ -1389,15 +2258,34 @@ const ManagementDashboardScreen = ({navigation}) => {
                         <Icon
                           name="map-pin"
                           size={14}
-                          color="#1976D2"
+                          color={modalType === 'SALES' ? '#2E7D32' : '#1976D2'}
                           style={{marginRight: 8}}
                         />
                         <Text style={styles.stockBranchName}>
                           {stok.nama_cabang || stok.cabang}
                         </Text>
                       </View>
-                      <View style={styles.stockValueBadge}>
-                        <Text style={styles.stockValueText}>{stok.qty}</Text>
+
+                      {/* BADGE DINAMIS (HIJAU UNTUK SALES, BIRU UNTUK STOK) */}
+                      <View
+                        style={{
+                          backgroundColor:
+                            modalType === 'SALES' ? '#E8F5E9' : '#E3F2FD',
+                          paddingHorizontal: 12,
+                          paddingVertical: 4,
+                          borderRadius: 6,
+                          minWidth: 60,
+                          alignItems: 'center',
+                        }}>
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 'bold',
+                            color:
+                              modalType === 'SALES' ? '#2E7D32' : '#1565C0',
+                          }}>
+                          {stok.qty} {modalType === 'SALES' ? '' : ''}
+                        </Text>
                       </View>
                     </View>
                   ))
@@ -1405,7 +2293,6 @@ const ManagementDashboardScreen = ({navigation}) => {
               </ScrollView>
             )}
 
-            {/* Footer Modal */}
             <View
               style={{
                 padding: 15,
@@ -1414,173 +2301,27 @@ const ManagementDashboardScreen = ({navigation}) => {
                 alignItems: 'center',
               }}>
               <Text style={{fontSize: 10, color: '#999'}}>
-                Data berdasarkan TMasterStok
+                {modalType === 'SALES'
+                  ? 'Total qty terjual bulan ini per cabang'
+                  : 'Sisa stok fisik di masing-masing cabang'}
               </Text>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* --- MODAL LAPORAN STOK KOSONG --- */}
-      <Modal
+      {/* Gunakan Component EmptyStockModal yang sudah dipisah */}
+      <EmptyStockModal
         visible={emptyStockModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setEmptyStockModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            {/* Header */}
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Stok Kosong (Reguler)</Text>
-              <TouchableOpacity
-                onPress={() => setEmptyStockModalVisible(false)}>
-                <Icon name="x" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Filter & Search Section */}
-            <View style={{paddingHorizontal: 16, paddingBottom: 10}}>
-              {/* 1. Branch Selector (Khusus KDC) */}
-              {/* FIX: Hapus pengecekan ganda yang berlebihan */}
-              {userInfo.cabang === 'KDC' && (
-                <View style={{marginBottom: 12, height: 45}}>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{
-                      alignItems: 'center',
-                      paddingRight: 16,
-                    }}>
-                    {branchList.map((cab, index) => {
-                      // Safety Check: Pastikan kode tidak null/undefined
-                      // Cek response backend Anda, mungkin namanya 'kode' bukan 'gdg_kode'?
-                      const kodeCabang =
-                        cab.gdg_kode || cab.kode || cab.cabang_kode || '?';
-                      const isSelected = emptyStockBranchFilter === kodeCabang;
-
-                      return (
-                        <TouchableOpacity
-                          key={index}
-                          onPress={() => {
-                            setEmptyStockBranchFilter(kodeCabang);
-                            fetchEmptyStock(emptyStockSearch, kodeCabang);
-                          }}
-                          style={{
-                            // Logic Warna: Biru jika aktif, Putih jika tidak
-                            backgroundColor: isSelected ? '#1976D2' : '#FFFFFF',
-                            // Border: Biar yang putih tidak 'tenggelam'
-                            borderWidth: 1,
-                            borderColor: isSelected ? '#1976D2' : '#E0E0E0',
-                            paddingHorizontal: 16,
-                            paddingVertical: 8,
-                            borderRadius: 20, // Capsule shape
-                            marginRight: 8,
-                            minWidth: 60, // Agar tidak jadi bulatan kecil
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            elevation: isSelected ? 2 : 0, // Sedikit bayangan
-                          }}>
-                          <Text
-                            style={{
-                              color: isSelected ? '#FFFFFF' : '#555555',
-                              fontWeight: '600',
-                              fontSize: 13,
-                            }}>
-                            {kodeCabang}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              )}
-
-              {/* 2. Search Bar */}
-              <View style={styles.searchRow}>
-                <Icon
-                  name="search"
-                  size={18}
-                  color="#888"
-                  style={{marginLeft: 10}}
-                />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Cari Barang..."
-                  value={emptyStockSearch}
-                  onChangeText={text => {
-                    setEmptyStockSearch(text);
-                    // Debounce manual: panggil fetch setelah user berhenti mengetik (opsional)
-                  }}
-                  onSubmitEditing={() =>
-                    fetchEmptyStock(emptyStockSearch, emptyStockBranchFilter)
-                  }
-                />
-                <TouchableOpacity
-                  onPress={() =>
-                    fetchEmptyStock(emptyStockSearch, emptyStockBranchFilter)
-                  }>
-                  <Icon
-                    name="arrow-right"
-                    size={20}
-                    color="#1976D2"
-                    style={{marginRight: 10}}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* List Data */}
-            {loadingEmptyStock ? (
-              <ActivityIndicator
-                size="large"
-                color="#D32F2F"
-                style={{marginTop: 20}}
-              />
-            ) : (
-              <FlatList
-                data={emptyStockList}
-                keyExtractor={item => item.kode + item.ukuran}
-                contentContainerStyle={{padding: 16}}
-                ListEmptyComponent={
-                  <Text
-                    style={{textAlign: 'center', marginTop: 20, color: '#999'}}>
-                    Aman! Tidak ada stok kosong di cabang ini.
-                  </Text>
-                }
-                renderItem={({item}) => (
-                  <TouchableOpacity
-                    style={styles.emptyItemRow}
-                    // RE-USE FITUR SEBARAN STOK:
-                    // Kalau diklik, cek stok di cabang lain
-                    onPress={() => {
-                      // Kita manipulasi objek agar sesuai dengan format handleCheckStock
-                      handleCheckStock({
-                        KODE: item.kode,
-                        UKURAN: item.ukuran,
-                        NAMA: item.nama_barang,
-                      });
-                    }}>
-                    <View style={{flex: 1}}>
-                      <Text style={styles.productName}>{item.nama_barang}</Text>
-                      <Text style={styles.productSize}>
-                        {item.ukuran} • {item.kode}
-                      </Text>
-                    </View>
-                    <View style={{alignItems: 'flex-end'}}>
-                      <View style={styles.stokHabisBadge}>
-                        <Text style={styles.stokHabisText}>
-                          KOSONG ({item.stok_akhir})
-                        </Text>
-                      </View>
-                      <Text style={styles.tapHint}>Cek Cabang Lain</Text>
-                    </View>
-                  </TouchableOpacity>
-                )}
-              />
-            )}
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setEmptyStockModalVisible(false)}
+        branchList={branchList}
+        userBranch={userInfo.cabang}
+        onFetchData={fetchEmptyStock}
+        dataList={emptyStockList}
+        loading={loadingEmptyStock}
+        // GANTI DARI handleCheckSalesDetail KE handleCheckRealStock
+        onItemPress={handleCheckRealStock}
+      />
     </View>
   );
 };
@@ -1614,9 +2355,47 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#EEE',
   },
-  drawerTitle: {fontSize: 22, fontWeight: 'bold', color: '#1565C0'},
+  drawerAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#1565C0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  avatarText: {color: '#fff', fontSize: 20, fontWeight: 'bold'},
+  drawerName: {fontSize: 18, fontWeight: 'bold', color: '#37474F'},
+  drawerRole: {fontSize: 12, color: '#90A4AE'},
+
+  drawerSectionTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#B0BEC5',
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
   drawerItem: {flexDirection: 'row', alignItems: 'center', paddingVertical: 15},
-  drawerItemText: {fontSize: 16, color: '#333', fontWeight: '500'},
+  drawerItemText: {fontSize: 16, color: '#455A64', fontWeight: '500'},
+
+  drawerFooter: {
+    marginBottom: 30,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+  },
+  versionText: {
+    fontSize: 11,
+    color: '#CFD8DC',
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  drawerTitle: {fontSize: 22, fontWeight: 'bold', color: '#1565C0'},
   edgeSwipeArea: {
     position: 'absolute',
     left: 0,
@@ -1628,6 +2407,7 @@ const styles = StyleSheet.create({
 
   // --- STYLES EXISTING ---
   headerCard: {
+    paddingTop: 60,
     padding: 20,
     paddingBottom: 50,
     borderBottomLeftRadius: 24,
@@ -1639,8 +2419,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
-  greetingText: {color: '#fff', fontSize: 18, fontWeight: '600'},
-  subGreeting: {color: '#BBDEFB', fontSize: 12},
+  menuButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 8,
+  },
+  greetingText: {color: '#fff', fontSize: 20, fontWeight: '700'},
+  subGreeting: {color: '#BBDEFB', fontSize: 13, marginTop: 2},
   headerIconBg: {
     backgroundColor: 'rgba(255,255,255,0.2)',
     padding: 8,
@@ -1657,7 +2442,7 @@ const styles = StyleSheet.create({
   headerStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.1)',
+    backgroundColor: 'rgba(0,0,0,0.15)',
     padding: 10,
     borderRadius: 12,
     alignSelf: 'flex-start',
@@ -1940,6 +2725,306 @@ const styles = StyleSheet.create({
     color: '#D32F2F',
     fontWeight: 'bold',
     fontSize: 10,
+  },
+
+  // --- STYLES BARU UNTUK OTORISASI ---
+  authItemCard: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10, // Jarak antar item di dalam accordion
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+    elevation: 1, // Shadow lebih tipis
+  },
+  authHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  authBadgeType: {
+    backgroundColor: '#E3F2FD',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  authBadgeText: {
+    color: '#1565C0',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  authTimeText: {
+    fontSize: 11,
+    color: '#999',
+  },
+  authContent: {
+    marginBottom: 12,
+  },
+  authTrxText: {
+    fontSize: 13,
+    color: '#555',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  authNominalText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  authDescText: {
+    fontSize: 13,
+    color: '#333',
+    // fontStyle: 'italic', // Hapus italic biar lebih jelas
+    lineHeight: 18, // Biar enter (\n) terbaca enak
+  },
+  authRequester: {
+    fontSize: 12,
+    color: '#757575',
+  },
+  authActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F5F5F5',
+    paddingTop: 12,
+  },
+  btnAuthAction: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  btnReject: {
+    backgroundColor: '#FFEBEE',
+  },
+  btnApprove: {
+    backgroundColor: '#1976D2',
+  },
+  btnAuthText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    // Remove the color function
+  },
+  btnRejectText: {
+    color: '#D32F2F',
+    // You can inherit font styles or repeat them if needed
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  btnApproveText: {
+    color: '#fff',
+    // You can inherit font styles or repeat them if needed
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 50,
+  },
+  emptyText: {
+    marginTop: 10,
+    color: '#999',
+    fontSize: 14,
+  },
+
+  // Styles untuk Accordion Cabang
+  branchGroupContainer: {
+    marginBottom: 12,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  branchHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    backgroundColor: '#F5F5F5',
+  },
+  branchHeaderActive: {
+    backgroundColor: '#E3F2FD', // Warna biru muda saat aktif
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  branchIconBg: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#1976D2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  branchTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  countBadge: {
+    backgroundColor: '#FF5252',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    minWidth: 24,
+    alignItems: 'center',
+  },
+  countText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  branchContent: {
+    padding: 10,
+    backgroundColor: '#FAFAFA',
+  },
+  infoBox: {
+    backgroundColor: '#F5F5F5',
+    padding: 8,
+    borderRadius: 6,
+    marginVertical: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: '#1976D2',
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)', // Transparan putih
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  filterChipActive: {
+    backgroundColor: '#fff', // Putih solid saat aktif
+    borderColor: '#fff',
+  },
+  filterChipText: {
+    color: '#E3F2FD',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  filterChipTextActive: {
+    color: '#1565C0', // Biru saat aktif
+    fontWeight: 'bold',
+  },
+  branchDropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 16, // Lebih lebar dikit
+    paddingVertical: 10,
+    borderRadius: 25, // Lebih bulat
+    // Shadow agar menonjol dari background
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  branchDropdownText: {
+    color: '#1565C0',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+
+  // STYLE BARU: BOTTOM SHEET MODAL
+  bottomSheetContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '60%',
+    paddingBottom: 20,
+  },
+  bottomSheetHeader: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  bottomSheetHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 2,
+    marginBottom: 10,
+  },
+  bottomSheetTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  branchOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  branchOptionActive: {
+    backgroundColor: '#1565C0',
+  },
+  branchIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  branchOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  branchOptionTextActive: {
+    color: '#fff',
+  },
+  branchOptionSub: {
+    fontSize: 11,
+    color: '#888',
+  },
+  sectionTitleWithoutMargin: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#D32F2F', // Merah Warning
+  },
+  negativeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  negativeBadge: {
+    backgroundColor: '#FFEBEE', // Merah muda background
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    minWidth: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  negativeText: {
+    color: '#D32F2F', // Teks Merah
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  cardFooter: {
+    padding: 12,
+    backgroundColor: '#FAFAFA',
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    alignItems: 'center',
   },
 });
 

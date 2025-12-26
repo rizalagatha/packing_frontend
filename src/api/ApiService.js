@@ -22,6 +22,16 @@ export const selectBranchApi = (branchCode, preAuthToken) => {
   });
 };
 
+export const updateFcmTokenApi = (fcmToken, token) => {
+  return apiClient.put(
+    '/auth/fcm-token',
+    {fcmToken},
+    {
+      headers: {Authorization: `Bearer ${token}`},
+    },
+  );
+};
+
 // --- Packing ---
 export const getPackingHistoryApi = (params, token) => {
   return apiClient.get('/packing/history', {
@@ -402,28 +412,35 @@ export const uploadOpnameResultApi = (data, token) => {
   });
 };
 
-// --- Dashboard Management (BARU) ---
-export const getDashboardTodayStatsApi = token => {
+// --- Dashboard Management (UPDATED WITH FILTER) ---
+
+// 1. Statistik Hari Ini (Terima filter cabang)
+export const getDashboardTodayStatsApi = (token, cabang = '') => {
   return apiClient.get('/dashboard/today-stats', {
+    params: {cabang}, // Kirim param cabang
     headers: {Authorization: `Bearer ${token}`},
   });
 };
 
-export const getDashboardPiutangApi = token => {
+// 2. Total Piutang (Terima filter cabang)
+export const getDashboardPiutangApi = (token, cabang = '') => {
   return apiClient.get('/dashboard/total-sisa-piutang', {
+    params: {cabang}, // Kirim param cabang
     headers: {Authorization: `Bearer ${token}`},
   });
 };
 
+// 3. Branch Performance (Tidak perlu ubah, karena akan di-hide di frontend jika difilter)
 export const getDashboardBranchPerformanceApi = token => {
   return apiClient.get('/dashboard/branch-performance', {
     headers: {Authorization: `Bearer ${token}`},
   });
 };
 
+// 4. Sales Chart (Sudah support via object params, pastikan frontend kirim property 'cabang')
 export const getDashboardSalesChartApi = (params, token) => {
   return apiClient.get('/dashboard/sales-chart', {
-    params, // { startDate, endDate, groupBy, cabang }
+    params, // { startDate, endDate, groupBy, cabang } <--- Cabang sudah ada di sini
     headers: {Authorization: `Bearer ${token}`},
   });
 };
@@ -434,37 +451,37 @@ export const getDashboardPendingActionsApi = token => {
   });
 };
 
-export const getDashboardTargetSummaryApi = token => {
+// 5. Target Summary (Terima filter cabang)
+export const getDashboardTargetSummaryApi = (token, cabang = '') => {
   return apiClient.get('/dashboard/sales-target-summary', {
+    params: {cabang}, // Kirim param cabang
     headers: {Authorization: `Bearer ${token}`},
   });
 };
 
-// 1. Ambil List Sisa Piutang Per Cabang
+// 6. List Sisa Piutang Per Cabang (Tidak perlu ubah)
 export const getDashboardPiutangPerCabangApi = token => {
-  // Pastikan route backend sesuai dengan yang kita buat sebelumnya
   return apiClient.get('/dashboard/piutang-per-cabang', {
     headers: {Authorization: `Bearer ${token}`},
   });
 };
 
-// 2. Ambil Detail Invoice Piutang per Cabang
+// 7. Detail Invoice Piutang (Tidak perlu ubah)
 export const getDashboardPiutangDetailApi = (kodeCabang, token) => {
   return apiClient.get(`/dashboard/piutang-detail/${kodeCabang}`, {
     headers: {Authorization: `Bearer ${token}`},
   });
 };
 
-// 1. Ambil Top 10 Produk Terlaris
+// 8. Top Selling (Sudah support branchFilter)
 export const getDashboardTopSellingApi = (token, branchFilter = '') => {
   return apiClient.get('/dashboard/top-selling', {
-    params: {branchFilter}, // Kirim filter jika ada (opsional)
+    params: {branchFilter},
     headers: {Authorization: `Bearer ${token}`},
   });
 };
 
-// 2. Cek Sebaran Stok (Interaktif)
-// Kita kirim ukuran juga agar data stok spesifik
+// 9. Cek Sebaran Stok (Interaktif)
 export const getDashboardStockSpreadApi = (barcode, ukuran, token) => {
   return apiClient.get(`/dashboard/stock-spread/${barcode}`, {
     params: {ukuran},
@@ -472,6 +489,7 @@ export const getDashboardStockSpreadApi = (barcode, ukuran, token) => {
   });
 };
 
+// 10. Trends (Sudah support branchFilter)
 export const getDashboardTrendsApi = (token, branchFilter = '') => {
   return apiClient.get('/dashboard/trends', {
     params: {branchFilter},
@@ -479,6 +497,7 @@ export const getDashboardTrendsApi = (token, branchFilter = '') => {
   });
 };
 
+// 11. Empty Stock (Sudah support targetCabang)
 export const getEmptyStockRegulerApi = (
   token,
   search = '',
@@ -486,6 +505,49 @@ export const getEmptyStockRegulerApi = (
 ) => {
   return apiClient.get('/dashboard/stock-empty-reguler', {
     params: {search, targetCabang},
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// 12. Sales Spread (Interaktif)
+export const getDashboardProductSalesSpreadApi = async (
+  kode,
+  ukuran,
+  token,
+) => {
+  return apiClient.get('/dashboard/sales-spread', {
+    headers: {Authorization: `Bearer ${token}`},
+    params: {kode, ukuran},
+  });
+};
+
+// --- Authorization (Tidak Berubah) ---
+export const getPendingAuthorizationApi = async token => {
+  return apiClient.get('/authorization/pending', {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+};
+
+export const processAuthorizationApi = async (authNomor, action, token) => {
+  return apiClient.post(
+    '/authorization/process',
+    {authNomor, action},
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+};
+
+// 13. Laporan Stok Minus
+export const getDashboardNegativeStockApi = (token, cabang = '') => {
+  return apiClient.get('/dashboard/laporan-stok-minus', {
+    params: {
+      cabang: cabang,
+    },
     headers: {Authorization: `Bearer ${token}`},
   });
 };

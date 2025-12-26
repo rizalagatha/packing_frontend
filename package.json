@@ -11,7 +11,10 @@
     "test": "jest"
   },
   "dependencies": {
+    "@notifee/react-native": "^9.1.8",
     "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-native-firebase/app": "^23.7.0",
+    "@react-native-firebase/messaging": "^23.7.0",
     "@react-navigation/native": "6.1.17",
     "@react-navigation/native-stack": "6.9.26",
     "axios": "1.7.2",
@@ -19,6 +22,7 @@
     "react-native": "0.73.6",
     "react-native-chart-kit": "^6.12.0",
     "react-native-date-picker": "^5.0.13",
+    "react-native-device-info": "^10.13.2",
     "react-native-linear-gradient": "^2.8.3",
     "react-native-ping": "^1.2.8",
     "react-native-progress": "^5.0.1",

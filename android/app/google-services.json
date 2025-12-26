@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "963177909946",
+    "project_id": "otorisasikaosan",
+    "storage_bucket": "otorisasikaosan.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:963177909946:android:6102c3455289ef14c5bc83",
+        "android_client_info": {
+          "package_name": "com.kaosan.packingapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBi1GZyRNrIMKcPH3eLfH99WcQbYma0bro"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
