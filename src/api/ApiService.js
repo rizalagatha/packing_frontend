@@ -590,3 +590,57 @@ export const searchPermintaanOpenApi = (params, token) => {
     headers: {Authorization: `Bearer ${token}`},
   });
 };
+
+// Tambahkan ini
+export const getPackingListHistoryApi = (params, token) => {
+  // [FIX] Tambahkan '/list' di akhir
+  return apiClient.get('/packing-list-form/history/list', {
+    params,
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getPackingListHistoryDetailApi = (nomor, token) => {
+  return apiClient.get(`/packing-list-form/history/${nomor}/detail`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Stok Real Time ---
+
+export const getRealTimeStockApi = (token, filters) => {
+  // Jika di backend "/api/laporan-stok" dan di route file "/real-time"
+  return apiClient.get('/laporan-stok/real-time', {
+    // <--- Cek apakah butuh awalan /api/ atau tidak
+    params: filters,
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getGudangOptionsApi = token => {
+  return apiClient.get('/laporan-stok/gudang-options', {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Ambil Barang ---
+export const getProductByBarcodeAmbilApi = (barcode, gudang, token) => {
+  return apiClient.get('/ambil-barang-form/lookup/product-by-barcode', {
+    params: {barcode, gudang},
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// 2. Simpan data pengambilan barang
+export const saveAmbilBarangApi = (payload, token) => {
+  return apiClient.post('/ambil-barang-form', payload, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// 3. Load data untuk edit (jika diperlukan)
+export const getAmbilBarangDetailApi = (id, token) => {
+  return apiClient.get(`/ambil-barang-form/${id}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};

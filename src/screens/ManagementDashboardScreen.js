@@ -18,13 +18,10 @@ import {
   TouchableOpacity,
   Modal,
   FlatList,
-  TextInput,
-  Share,
   Alert,
   Animated, // Import Animated
   PanResponder, // Import PanResponder untuk Swipe
   Easing,
-  Image,
   ToastAndroid,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
@@ -152,6 +149,7 @@ const AnimatedBar = ({percentage, color, height = 10, style}) => {
 const AuthItem = React.memo(
   ({item, onProcess, processingId}) => {
     const isProcessing = processingId === item.o_nomor;
+    const isBorrowing = item.o_jenis === 'PEMINJAMAN_BARANG';
 
     return (
       <View style={styles.authItemCard}>
@@ -217,6 +215,18 @@ const AuthItem = React.memo(
             </Text>
           )}
 
+          {isBorrowing ? (
+            <Text style={[styles.authNominalText, {color: '#2E7D32'}]}>
+              Total Pinjam: {item.o_nominal} Pcs
+            </Text>
+          ) : (
+            item.o_nominal > 0 && (
+              <Text style={styles.authNominalText}>
+                Nominal: {formatRupiah(item.o_nominal)}
+              </Text>
+            )
+          )}
+
           {/* 4. KETERANGAN (Cust Name + Item Name) */}
           {/* Karena kita menyimpan "Cust: Budi \n Item: Kaos" di o_ket, text ini akan muncul multi-line */}
           <View style={styles.infoBox}>
@@ -273,7 +283,7 @@ const BranchGroup = React.memo(
             <View style={styles.branchIconBg}>
               <Icon name="map-pin" size={16} color="#fff" />
             </View>
-            <Text style={styles.branchTitle}>CABANG {item.branch}</Text>
+            <Text style={styles.branchTitle}>{item.branchName}</Text>
           </View>
 
           <View style={{flexDirection: 'row', alignItems: 'center'}}>
@@ -447,25 +457,42 @@ const ManagementDashboardScreen = ({navigation}) => {
   // --- 1. AMBIL VERSI DINAMIS ---
   const appVersion = DeviceInfo.getVersion();
 
-  // --- 2. LOGIC AKSES (Ganti isHaris dengan ini) ---
+  // --- 2. LOGIC AKSES (Otorisasi Dinamis Berdasarkan Tanggal) ---
   const {showSidebar, canAuthorize} = useMemo(() => {
     if (!userInfo || !userInfo.nama) {
       return {showSidebar: false, canAuthorize: false};
     }
 
     const name = userInfo.nama.toUpperCase();
-    const branch = userInfo.cabang; // misal 'KDC' atau 'K01'
 
-    // 1. Siapa yang boleh buka Sidebar? (Haris, Darul, Estu)
-    const sidebarAccess = ['HARIS', 'DARUL', 'ESTU'].some(allowed =>
+    // Ambil Waktu Sekarang
+    const today = new Date();
+    // Tentukan Batas Tanggal (Tahun, Bulan-1, Tanggal) -> Bulan Januari adalah 0
+    const startTransfer = new Date(2026, 0, 12); // 12 Jan 2026
+    const endTransfer = new Date(2026, 0, 17); // 17 Jan 2026 (Jam 00:00)
+    const isEstuManagerPeriod = today >= startTransfer && today < endTransfer;
+
+    // 1. Sidebar Access: Haris, Darul, Estu, Rio tetap bisa buka menu sidebar
+    const sidebarAccess = ['HARIS', 'DARUL', 'ESTU', 'RIO'].some(allowed =>
       name.includes(allowed),
     );
 
-    // 2. Siapa yang boleh Otorisasi? (HANYA HARIS & DARUL dan harus User Pusat/KDC)
-    // Hapus 'ESTU' dari sini
-    const authAccess =
-      branch === 'KDC' &&
-      ['HARIS', 'DARUL'].some(allowed => name.includes(allowed));
+    // 2. Authorization Logic:
+    let authAccess = false;
+
+    if (name.includes('ESTU')) {
+      // ESTU selalu punya akses menu (karena handle Peminjaman Barang)
+      authAccess = true;
+    } else if (name.includes('DARUL')) {
+      // DARUL selalu punya akses menu
+      authAccess = true;
+    } else if (name.includes('RIO')) {
+      // --- TAMBAHKAN INI ---
+      authAccess = true;
+    } else if (name.includes('HARIS')) {
+      // HARIS punya akses menu, KECUALI saat masa pengalihan ke Estu
+      authAccess = !isEstuManagerPeriod;
+    }
 
     return {showSidebar: sidebarAccess, canAuthorize: authAccess};
   }, [userInfo]);
@@ -623,7 +650,8 @@ const ManagementDashboardScreen = ({navigation}) => {
   // --- HEADER SETUP ---
   React.useLayoutEffect(() => {
     navigation.setOptions({
-      headerLeft: isHaris
+      // [FIX] Gunakan showSidebar, bukan isHaris
+      headerLeft: showSidebar
         ? () => (
             <TouchableOpacity onPress={openDrawer} style={{marginLeft: 15}}>
               <Icon name="menu" size={24} color="#333" />
@@ -633,7 +661,7 @@ const ManagementDashboardScreen = ({navigation}) => {
       headerTitle: 'Dashboard',
       headerTitleAlign: 'center',
     });
-  }, [navigation, isHaris, openDrawer]);
+  }, [navigation, showSidebar, openDrawer]); // [FIX] Update dependency
 
   // --- FETCH FUNCTIONS ---
   const fetchTodayStats = useCallback(
@@ -964,10 +992,10 @@ const ManagementDashboardScreen = ({navigation}) => {
 
   useEffect(() => {
     if (userToken) {
-      // Panggil tanpa argumen, loadAllData akan mengambil state dashboardBranchFilter terbaru
       loadAllData();
     }
-  }, [userToken, dashboardBranchFilter, loadAllData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userToken, dashboardBranchFilter]);
 
   const handleFilterChange = branchCode => {
     // Cukup update state.
@@ -1042,6 +1070,17 @@ const ManagementDashboardScreen = ({navigation}) => {
     }
   }, [route, fetchPendingAuth, navigation]);
 
+  // Tambahkan ini di deretan useMemo Anda
+  const branchNameMap = useMemo(() => {
+    const map = {};
+    branchList.forEach(cab => {
+      const kode = cab.gdg_kode || cab.kode;
+      const nama = cab.gdg_nama || cab.nama;
+      if (kode) map[kode] = nama;
+    });
+    return map;
+  }, [branchList]);
+
   // [BARU] Logic Pengelompokan Data per Cabang
   const groupedAuthList = useMemo(() => {
     if (!authList.length) return [];
@@ -1060,9 +1099,11 @@ const ManagementDashboardScreen = ({navigation}) => {
       .sort()
       .map(key => ({
         branch: key,
+        // AMBIL NAMA DARI MAP, JIKA TIDAK ADA PAKAI KODE
+        branchName: branchNameMap[key] || `CABANG ${key}`,
         data: groups[key],
       }));
-  }, [authList]);
+  }, [authList, branchNameMap]);
 
   // [BARU] Toggle Expand/Collapse Cabang
   const toggleBranch = useCallback(branchCode => {
@@ -1916,23 +1957,13 @@ const ManagementDashboardScreen = ({navigation}) => {
             </View>
           )}
 
-          {/* CARD PIUTANG */}
-          {/* Tetap dirender, datanya menyesuaikan filter */}
           {renderPiutangSection()}
         </View>
-        {/* 3. Chart & Target (Selalu Tampil, datanya berubah ikut filter) */}
         {renderChartAndTarget()}
-        {/* 4. Ranking Cabang */}
-        {/* LOGIC: Sembunyikan jika sedang memfilter 1 cabang */}
         {dashboardBranchFilter === 'ALL' && renderBranchRanking()}
-        {/* 5. Analisa Tren (Selalu Tampil, datanya berubah ikut filter) */}
         {renderProductTrends()}
-        {/* 6. Top Produk (Selalu Tampil, datanya berubah ikut filter) */}
         {renderTopProducts()}
-        {/* 7. Stok Minus [BARU] */}
         {renderNegativeStock()}
-
-        {/* Spacer Akhir */}
         <View style={{height: 20}} />
       </ScrollView>
 

@@ -24,7 +24,7 @@ import SuratJalanScreen from './src/screens/SuratJalanScreen';
 import TerimaSjScreen from './src/screens/TerimaSjScreen';
 import ReturAdminScreen from './src/screens/ReturAdminScreen';
 import LinkWhatsappScreen from './src/screens/LinkWhatsappScreen';
-import RiwayatSuratJalanScreen from './src/screens/RiwayatSuratJalanScreen';
+import RiwayatPackingListScreen from './src/screens/RiwayatPackingListScreen';
 import LaporanPendingScreen from './src/screens/LaporanPendingScreen';
 import CheckerScreen from './src/screens/CheckerScreen';
 import MutasiStoreScreen from './src/screens/MutasiStoreScreen';
@@ -36,6 +36,8 @@ import PenjualanListScreen from './src/screens/PenjualanListScreen';
 import StokOpnameScreen from './src/screens/StokOpnameScreen';
 import ManagementDashboardScreen from './src/screens/ManagementDashboardScreen';
 import PackingListScreen from './src/screens/PackingListScreen';
+import RealTimeStockScreen from './src/screens/RealTimeStockScreen';
+import AmbilBarangScreen from './src/screens/AmbilBarangScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -264,12 +266,17 @@ const App = () => {
             <Stack.Screen
               name="LowStock"
               component={LowStockScreen}
-              options={{title: 'Analisis Stok Menipis'}}
+              options={{title: 'Permintaan Otomatis'}}
             />
             <Stack.Screen
-              name="RiwayatSuratJalan"
-              component={RiwayatSuratJalanScreen}
-              options={{title: 'Riwayat Surat Jalan'}}
+              name="RiwayatPackingList"
+              component={RiwayatPackingListScreen}
+              options={{title: 'Riwayat Packing List'}}
+            />
+            <Stack.Screen
+              name="AmbilBarang"
+              component={AmbilBarangScreen}
+              options={{title: 'Pengambilan Barang'}}
             />
             <Stack.Screen
               name="TerimaSj"
@@ -290,6 +297,11 @@ const App = () => {
               name="LinkWhatsapp"
               component={LinkWhatsappScreen}
               options={{title: 'Tautkan WhatsApp'}}
+            />
+            <Stack.Screen
+              name="RealTimeStock"
+              component={RealTimeStockScreen}
+              options={{title: 'Stok Real Time'}}
             />
             <Stack.Screen
               name="Checker"

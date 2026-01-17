@@ -4,6 +4,7 @@ import React, {
   useContext,
   useCallback,
   useRef,
+  useMemo,
 } from 'react';
 import {
   View,
@@ -16,14 +17,13 @@ import {
   ActivityIndicator,
   SafeAreaView,
   StatusBar,
-  Keyboard,
   Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import {AuthContext} from '../context/AuthContext';
 import SearchModal from '../components/SearchModal';
 import Toast from 'react-native-toast-message';
-import SoundPlayer from 'react-native-sound-player'; // Pastikan library ini terinstall
+import SoundPlayer from 'react-native-sound-player';
 import {
   savePackingListApi,
   getPackingListDetailApi,
@@ -31,6 +31,7 @@ import {
   findProductByBarcodeApi,
   searchStoresApi,
   searchPermintaanOpenApi,
+  getItemsFromPackingApi,
 } from '../api/ApiService';
 
 const PackingListScreen = ({navigation, route}) => {
@@ -42,6 +43,7 @@ const PackingListScreen = ({navigation, route}) => {
   // --- STATE ---
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isScanningPack, setIsScanningPack] = useState(false);
 
   // Header Data
   const [header, setHeader] = useState({
@@ -56,11 +58,23 @@ const PackingListScreen = ({navigation, route}) => {
   const [barcodeInput, setBarcodeInput] = useState('');
   const [lastScannedBarcode, setLastScannedBarcode] = useState(null);
 
-  // --- SEARCH MODAL STATE ---
+  // [MODE SCAN]
+  const [scanMode, setScanMode] = useState('packing');
+  const [scannedPacks, setScannedPacks] = useState(new Set());
+
   const [isSearchVisible, setIsSearchVisible] = useState(false);
   const [searchMode, setSearchMode] = useState('STORE');
 
-  // --- SOUND HELPER ---
+  // --- COMPUTED ---
+  const totalScan = useMemo(
+    () => items.reduce((acc, curr) => acc + curr.jumlah, 0),
+    [items],
+  );
+  const totalMinta = useMemo(
+    () => items.reduce((acc, curr) => acc + (curr.minta || 0), 0),
+    [items],
+  );
+
   const playSound = type => {
     try {
       const soundName = type === 'success' ? 'beep_success' : 'beep_error';
@@ -70,7 +84,7 @@ const PackingListScreen = ({navigation, route}) => {
     }
   };
 
-  // --- INITIAL LOAD (EDIT MODE) ---
+  // --- INITIAL LOAD ---
   const loadDataForEdit = useCallback(
     async nomorPl => {
       setLoading(true);
@@ -92,12 +106,13 @@ const PackingListScreen = ({navigation, route}) => {
           nama: item.nama,
           ukuran: item.ukuran,
           stok: Number(item.stok),
-          minta: 0, // Edit mode biasanya tidak membawa data minta lama
-          jumlah: Number(item.jumlah), // Load jumlah yang sudah tersimpan
+          minta: 0,
+          jumlah: Number(item.jumlah),
           barcode: item.barcode,
           keterangan: item.keterangan || '',
         }));
         setItems(mappedItems);
+        setScanMode('barang');
       } catch (error) {
         Alert.alert('Error', 'Gagal memuat data packing list.');
         navigation.goBack();
@@ -108,31 +123,6 @@ const PackingListScreen = ({navigation, route}) => {
     [userToken, navigation],
   );
 
-  // --- EFFECT: HANDLE INITIAL LOAD (EDIT OR AUTO LOAD) ---
-  useEffect(() => {
-    // Skenario 1: Mode Edit (Membuka Packing List yang sudah tersimpan)
-    if (isEditMode) {
-      loadDataForEdit(nomor);
-    }
-    // Skenario 2: Auto Load dari Low Stock Screen
-    else if (route.params?.autoLoadRequest) {
-      const {nomor: requestNomor, store} = route.params.autoLoadRequest;
-
-      console.log('[PackingList] Auto Loading Request:', requestNomor);
-
-      // 1. Isi Header secara otomatis (Store & No Permintaan)
-      setHeader(prev => ({
-        ...prev,
-        store: store,
-        permintaan: requestNomor,
-      }));
-
-      // 2. Panggil API untuk memuat item permintaan tersebut
-      handleLoadRequest(requestNomor);
-    }
-  }, [nomor, isEditMode, loadDataForEdit, route.params, handleLoadRequest]);
-
-  // --- LOGIC: LOAD FROM REQUEST ---
   const handleLoadRequest = useCallback(
     async nomorPermintaan => {
       setLoading(true);
@@ -140,11 +130,9 @@ const PackingListScreen = ({navigation, route}) => {
         const res = await loadItemsFromRequestApi(nomorPermintaan, userToken);
         let rawItems = [];
 
-        // Handling format response
         if (Array.isArray(res.data)) rawItems = res.data;
         else if (res.data && Array.isArray(res.data.data))
           rawItems = res.data.data;
-        else if (Array.isArray(res)) rawItems = res; // Handle jika backend langsung return array
 
         if (rawItems.length === 0) {
           Alert.alert('Info', 'Permintaan ini tidak memiliki item detail.');
@@ -157,11 +145,7 @@ const PackingListScreen = ({navigation, route}) => {
             ukuran: item.ukuran,
             stok: Number(item.stok) || 0,
             minta: Number(item.minta) || 0,
-
-            // --- PERUBAHAN PENTING 1: START DARI 0 ---
-            // User harus scan satu per satu, tidak langsung terisi penuh
             jumlah: 0,
-
             barcode: item.barcode || '',
             keterangan: '',
           }));
@@ -171,7 +155,7 @@ const PackingListScreen = ({navigation, route}) => {
           Toast.show({
             type: 'success',
             text1: 'Sukses',
-            text2: `Memuat ${newItems.length} item. Silakan Scan.`,
+            text2: `Memuat ${newItems.length} item. Silakan Scan Barang.`,
           });
         }
       } catch (error) {
@@ -184,7 +168,179 @@ const PackingListScreen = ({navigation, route}) => {
     [userToken],
   );
 
-  // --- LOGIC: SCAN BARCODE (CORE) ---
+  useEffect(() => {
+    if (isEditMode) {
+      loadDataForEdit(nomor);
+    } else if (route.params?.autoLoadRequest) {
+      const {nomor: requestNomor, store} = route.params.autoLoadRequest;
+      setHeader(prev => ({
+        ...prev,
+        store: store,
+        permintaan: requestNomor,
+      }));
+      setScanMode('barang');
+      handleLoadRequest(requestNomor);
+    }
+  }, [nomor, isEditMode, loadDataForEdit, route.params, handleLoadRequest]);
+
+  // --- LOGIC GANTI MODE ---
+  const handleChangeMode = newMode => {
+    if (scanMode === newMode) return;
+
+    const confirmChange = () => {
+      setItems([]);
+      setHeader(prev => ({...prev, permintaan: ''}));
+      setScannedPacks(new Set());
+      setScanMode(newMode);
+    };
+
+    if (items.length > 0) {
+      Alert.alert('Ganti Mode?', 'Daftar item saat ini akan dikosongkan.', [
+        {text: 'Batal'},
+        {text: 'Ya, Ganti', onPress: confirmChange},
+      ]);
+    } else {
+      confirmChange();
+    }
+  };
+
+  // --- LOGIC SCAN PACKING (FIXED STOK) ---
+  const handleScanPackNomor = async packNomor => {
+    if (scannedPacks.has(packNomor)) {
+      Toast.show({
+        type: 'info',
+        text1: 'Info',
+        text2: `Packing ${packNomor} sudah di-scan.`,
+      });
+      return;
+    }
+
+    if (!packNomor.toUpperCase().startsWith('PACK')) {
+      Toast.show({
+        type: 'error',
+        text1: 'Format Salah',
+        text2: 'Scan barcode Packing (PACK...)',
+      });
+      playSound('error');
+      return;
+    }
+
+    setIsScanningPack(true);
+    try {
+      const response = await getItemsFromPackingApi(packNomor, userToken);
+      const newItemsFromPack = response.data.data;
+
+      if (!newItemsFromPack || newItemsFromPack.length === 0) {
+        throw new Error('Data packing kosong.');
+      }
+
+      setItems(prevItems => {
+        const itemsMap = new Map(prevItems.map(i => [i.barcode, i]));
+
+        newItemsFromPack.forEach(newItem => {
+          if (itemsMap.has(newItem.barcode)) {
+            // Item sudah ada, tambah qty saja
+            const existing = itemsMap.get(newItem.barcode);
+            existing.jumlah += newItem.qty;
+            // Opsional: update stok jika data baru lebih update
+            // existing.stok = Number(newItem.stok) || existing.stok;
+          } else {
+            // Item baru
+            itemsMap.set(newItem.barcode, {
+              id: newItem.kode + newItem.ukuran + Math.random().toString(),
+              kode: newItem.kode,
+              nama: newItem.nama,
+              ukuran: newItem.ukuran,
+
+              // [FIX] Mengambil Stok dari API (bukan 999 lagi)
+              stok: Number(newItem.stok) || 0,
+
+              minta: 0,
+              jumlah: newItem.qty,
+              barcode: newItem.barcode,
+              keterangan: `From ${packNomor}`,
+            });
+          }
+        });
+
+        return Array.from(itemsMap.values());
+      });
+
+      setScannedPacks(prev => new Set(prev).add(packNomor));
+      Toast.show({
+        type: 'success',
+        text1: 'Sukses',
+        text2: `Packing ${packNomor} ditambahkan.`,
+      });
+      playSound('success');
+    } catch (error) {
+      const msg = error.response?.data?.message || 'Gagal memuat data packing.';
+      Toast.show({type: 'error', text1: 'Error Scan', text2: msg});
+      playSound('error');
+    } finally {
+      setIsScanningPack(false);
+    }
+  };
+
+  const handleScanBarang = async scannedCode => {
+    const itemIndex = items.findIndex(i => i.barcode === scannedCode);
+
+    if (itemIndex >= 0) {
+      const newItems = [...items];
+      const item = newItems[itemIndex];
+
+      if (header.permintaan && item.jumlah + 1 > item.minta) {
+        Toast.show({
+          type: 'info',
+          text1: 'Info',
+          text2: 'Jumlah scan melebihi permintaan.',
+        });
+      }
+
+      item.jumlah += 1;
+      newItems.splice(itemIndex, 1);
+      newItems.unshift(item);
+      setItems(newItems);
+      setLastScannedBarcode(scannedCode);
+      playSound('success');
+    } else {
+      if (header.permintaan) {
+        Toast.show({
+          type: 'error',
+          text1: 'Ditolak',
+          text2: 'Barang tidak ada di daftar permintaan.',
+        });
+        playSound('error');
+      } else {
+        try {
+          const res = await findProductByBarcodeApi(scannedCode, userToken);
+          const product = res.data;
+          const newItem = {
+            id: product.kode + product.ukuran,
+            kode: product.kode,
+            nama: product.nama,
+            ukuran: product.ukuran,
+            stok: Number(product.stok) || 0,
+            minta: 0,
+            jumlah: 1,
+            barcode: product.barcode,
+            keterangan: '',
+          };
+          setItems([newItem, ...items]);
+          setLastScannedBarcode(scannedCode);
+          playSound('success');
+        } catch (error) {
+          Toast.show({
+            type: 'error',
+            text1: 'Tidak Ditemukan',
+            text2: 'Barcode tidak valid.',
+          });
+          playSound('error');
+        }
+      }
+    }
+  };
+
   const handleScan = async () => {
     if (!header.store.kode) {
       Toast.show({
@@ -199,84 +355,15 @@ const PackingListScreen = ({navigation, route}) => {
     if (!barcodeInput) return;
 
     const scannedCode = barcodeInput.trim();
-    setBarcodeInput(''); // Langsung kosongkan input
-
-    // 1. Cari di Daftar Item (Local Search)
-    const itemIndex = items.findIndex(i => i.barcode === scannedCode);
-
-    if (itemIndex >= 0) {
-      // --- BARANG DITEMUKAN DI LIST ---
-      const newItems = [...items];
-      const item = newItems[itemIndex];
-
-      // Validasi: Apakah melebihi permintaan? (Opsional: Disini kita beri warning tapi tetap allow, atau blokir)
-      if (header.permintaan && item.jumlah >= item.minta) {
-        Toast.show({
-          type: 'info',
-          text1: 'Info',
-          text2: 'Jumlah scan sudah memenuhi permintaan.',
-        });
-        // playSound('error'); // Uncomment jika ingin bunyi error saat lebih
-        // return; // Uncomment jika ingin memblokir kelebihan
-      }
-
-      // Increment Jumlah
-      item.jumlah += 1;
-
-      // Reorder: Pindahkan item yang baru discan ke paling atas
-      newItems.splice(itemIndex, 1);
-      newItems.unshift(item);
-
-      setItems(newItems);
-      setLastScannedBarcode(scannedCode);
-      playSound('success');
+    if (scanMode === 'packing') {
+      await handleScanPackNomor(scannedCode);
     } else {
-      // --- BARANG TIDAK DITEMUKAN (BARANG ASING) ---
-      // Jika load dari permintaan, biasanya barang asing ditolak atau dicek ke server
-      if (header.permintaan) {
-        Toast.show({
-          type: 'error',
-          text1: 'Item Ditolak',
-          text2: 'Barang tidak ada di daftar permintaan.',
-        });
-        playSound('error');
-      } else {
-        // Mode tanpa permintaan (Free Scan), cari ke backend
-        try {
-          const res = await findProductByBarcodeApi(scannedCode, userToken);
-          const product = res.data;
-
-          const newItem = {
-            id: product.kode + product.ukuran,
-            kode: product.kode,
-            nama: product.nama,
-            ukuran: product.ukuran,
-            stok: Number(product.stok) || 0,
-            minta: 0,
-            jumlah: 1,
-            barcode: product.barcode,
-            keterangan: '',
-          };
-
-          setItems([newItem, ...items]);
-          setLastScannedBarcode(scannedCode);
-          playSound('success');
-        } catch (error) {
-          Toast.show({
-            type: 'error',
-            text1: 'Tidak Ditemukan',
-            text2: 'Barcode tidak valid.',
-          });
-          playSound('error');
-        }
-      }
+      await handleScanBarang(scannedCode);
     }
-
-    // Kembalikan fokus ke input (untuk alat scan external)
+    setBarcodeInput('');
     setTimeout(() => scannerInputRef.current?.focus(), 200);
   };
 
-  // --- LOGIC: DECREASE QTY (MINUS BUTTON) ---
   const handleDecreaseQty = id => {
     setItems(currentItems =>
       currentItems.map(item => {
@@ -289,7 +376,7 @@ const PackingListScreen = ({navigation, route}) => {
   };
 
   const deleteItem = id => {
-    Alert.alert('Hapus Item', 'Yakin hapus item ini dari daftar?', [
+    Alert.alert('Hapus Item', 'Hapus item ini?', [
       {text: 'Batal'},
       {
         text: 'Hapus',
@@ -301,12 +388,11 @@ const PackingListScreen = ({navigation, route}) => {
   const handleSave = async () => {
     if (!header.store.kode)
       return Alert.alert('Validasi', 'Store tujuan harus diisi.');
-
     const validItems = items.filter(i => i.jumlah > 0);
     if (validItems.length === 0)
       return Alert.alert('Validasi', 'Belum ada barang yang discan.');
 
-    Alert.alert('Konfirmasi Simpan', 'Simpan Packing List ini?', [
+    Alert.alert('Simpan Packing List?', 'Pastikan data benar.', [
       {text: 'Batal', style: 'cancel'},
       {
         text: 'Simpan',
@@ -332,7 +418,6 @@ const PackingListScreen = ({navigation, route}) => {
     ]);
   };
 
-  // --- RENDER ITEM ---
   const renderItem = ({item}) => {
     const isCompleted =
       header.permintaan && item.jumlah >= item.minta && item.minta > 0;
@@ -358,7 +443,6 @@ const PackingListScreen = ({navigation, route}) => {
                 </Text>
               </View>
             </View>
-            {/* TAMPILKAN BARCODE DISINI */}
             <Text style={styles.barcodeText}>
               <Icon name="maximize" size={10} /> {item.barcode}
             </Text>
@@ -389,7 +473,6 @@ const PackingListScreen = ({navigation, route}) => {
           </View>
 
           <View style={styles.qtyContainer}>
-            {/* TOMBOL MINUS (HANYA INI CARA KURANGI QTY MANUAL) */}
             <TouchableOpacity
               style={styles.btnMinus}
               onPress={() => handleDecreaseQty(item.id)}
@@ -410,6 +493,7 @@ const PackingListScreen = ({navigation, route}) => {
           </View>
         </View>
 
+        {/* Warning jika melebihi stok (jika stok valid > 0) */}
         {item.jumlah > item.stok && (
           <Text style={styles.warningText}>
             ⚠️ Jumlah melebihi stok gudang!
@@ -437,7 +521,6 @@ const PackingListScreen = ({navigation, route}) => {
           searchMode === 'STORE'
             ? params => searchStoresApi({...params}, userToken)
             : async params => {
-                // Logic wrapper agar sesuai format SearchModal
                 const res = await searchPermintaanOpenApi(
                   {...params, storeKode: header.store.kode},
                   userToken,
@@ -464,11 +547,9 @@ const PackingListScreen = ({navigation, route}) => {
                 <Text style={styles.itemNama}>
                   Tgl: {item.tanggal ? item.tanggal.split('T')[0] : '-'}
                 </Text>
-                {item.keterangan && (
-                  <Text style={{fontSize: 12, fontStyle: 'italic'}}>
-                    {item.keterangan}
-                  </Text>
-                )}
+                <Text style={{fontSize: 12, fontStyle: 'italic'}}>
+                  {item.keterangan}
+                </Text>
               </>
             )}
           </View>
@@ -483,7 +564,7 @@ const PackingListScreen = ({navigation, route}) => {
               },
               permintaan: '',
             }));
-            setItems([]); // Reset items jika ganti store
+            setItems([]);
           } else {
             handleLoadRequest(item.nomor || item.mt_nomor);
           }
@@ -492,6 +573,49 @@ const PackingListScreen = ({navigation, route}) => {
 
       {/* HEADER FORM */}
       <View style={styles.headerSection}>
+        <View style={styles.modeContainer}>
+          <TouchableOpacity
+            style={[
+              styles.modeBtn,
+              scanMode === 'packing' && styles.modeBtnActive,
+            ]}
+            onPress={() => handleChangeMode('packing')}>
+            <Icon
+              name="package"
+              size={16}
+              color={scanMode === 'packing' ? '#fff' : '#666'}
+            />
+            <Text
+              style={[
+                styles.modeText,
+                scanMode === 'packing' && styles.modeTextActive,
+              ]}>
+              {' '}
+              Scan Packing
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.modeBtn,
+              scanMode === 'barang' && styles.modeBtnActive,
+            ]}
+            onPress={() => handleChangeMode('barang')}>
+            <Icon
+              name="list"
+              size={16}
+              color={scanMode === 'barang' ? '#fff' : '#666'}
+            />
+            <Text
+              style={[
+                styles.modeText,
+                scanMode === 'barang' && styles.modeTextActive,
+              ]}>
+              {' '}
+              Scan Barang
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.row}>
           <TouchableOpacity
             style={[styles.inputBox, {flex: 1, marginRight: 8}]}
@@ -510,28 +634,33 @@ const PackingListScreen = ({navigation, route}) => {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.inputBox, {flex: 0.8}]}
-            onPress={() => {
-              if (!header.store.kode)
-                return Toast.show({type: 'error', text1: 'Pilih Store Dulu'});
-              setSearchMode('PERMINTAAN');
-              setIsSearchVisible(true);
-            }}
-            disabled={isEditMode || !header.store.kode}>
-            <Text style={styles.labelInput}>No. Permintaan</Text>
-            <Text
-              style={[styles.valueInput, !header.permintaan && {color: '#999'}]}
-              numberOfLines={1}>
-              {header.permintaan || 'Load...'}
-            </Text>
-          </TouchableOpacity>
+          {/* INPUT NO PERMINTAAN: Hanya muncul jika Mode = Barang */}
+          {scanMode === 'barang' && (
+            <TouchableOpacity
+              style={[styles.inputBox, {flex: 0.8}]}
+              onPress={() => {
+                if (!header.store.kode)
+                  return Toast.show({type: 'error', text1: 'Pilih Store Dulu'});
+                setSearchMode('PERMINTAAN');
+                setIsSearchVisible(true);
+              }}
+              disabled={isEditMode || !header.store.kode}>
+              <Text style={styles.labelInput}>No. Permintaan</Text>
+              <Text
+                style={[
+                  styles.valueInput,
+                  !header.permintaan && {color: '#999'},
+                ]}
+                numberOfLines={1}>
+                {header.permintaan || 'Load...'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* SCANNER INPUT */}
         <View style={styles.scanContainer}>
           <Icon
-            name="maximize"
+            name={scanMode === 'packing' ? 'package' : 'maximize'}
             size={20}
             color="#666"
             style={{marginRight: 10}}
@@ -539,13 +668,17 @@ const PackingListScreen = ({navigation, route}) => {
           <TextInput
             ref={scannerInputRef}
             style={styles.scanInput}
-            placeholder="Scan Barcode Barang..."
+            placeholder={
+              scanMode === 'packing'
+                ? 'Scan No. Packing (PACK...)'
+                : 'Scan Barcode Barang...'
+            }
             value={barcodeInput}
             onChangeText={setBarcodeInput}
             onSubmitEditing={handleScan}
             autoCapitalize="none"
             blurOnSubmit={false}
-            autoFocus={true} // Auto focus saat buka
+            autoFocus={true}
           />
           {barcodeInput.length > 0 && (
             <TouchableOpacity
@@ -557,7 +690,6 @@ const PackingListScreen = ({navigation, route}) => {
         </View>
       </View>
 
-      {/* LIST ITEMS */}
       <FlatList
         data={items}
         keyExtractor={item => item.id}
@@ -567,20 +699,46 @@ const PackingListScreen = ({navigation, route}) => {
           <View style={styles.emptyState}>
             <Icon name="layers" size={48} color="#DDD" />
             <Text style={{color: '#999', marginTop: 10}}>
-              Load Permintaan atau Scan Barang
+              {scanMode === 'packing'
+                ? 'Scan Kardus Packing dari Produksi'
+                : 'Load Permintaan lalu Scan Barang'}
             </Text>
           </View>
         }
       />
 
-      {/* FOOTER */}
       <View style={styles.footer}>
-        <View>
-          <Text style={{fontSize: 12, color: '#666'}}>Total Scan</Text>
-          <Text style={{fontSize: 18, fontWeight: 'bold', color: '#1976D2'}}>
-            {items.reduce((acc, curr) => acc + curr.jumlah, 0)} Pcs
-          </Text>
+        <View style={{flex: 1}}>
+          <Text style={{fontSize: 11, color: '#666'}}>Total Scan / Minta</Text>
+          <View style={{flexDirection: 'row', alignItems: 'flex-end'}}>
+            <Text style={{fontSize: 20, fontWeight: 'bold', color: '#1976D2'}}>
+              {totalScan}
+            </Text>
+            {totalMinta > 0 ? (
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '600',
+                  color: '#757575',
+                  marginBottom: 2,
+                  marginLeft: 4,
+                }}>
+                / {totalMinta} Pcs
+              </Text>
+            ) : (
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: '#666',
+                  marginBottom: 2,
+                  marginLeft: 4,
+                }}>
+                Pcs
+              </Text>
+            )}
+          </View>
         </View>
+
         <TouchableOpacity
           style={[
             styles.btnSave,
@@ -603,6 +761,16 @@ const PackingListScreen = ({navigation, route}) => {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Loading Overlay */}
+      {isScanningPack && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={{color: '#fff', marginTop: 10, fontWeight: 'bold'}}>
+            Memuat Data Packing...
+          </Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -616,7 +784,6 @@ const styles = StyleSheet.create({
     borderColor: '#EEE',
   },
   row: {flexDirection: 'row', marginBottom: 12},
-
   inputBox: {
     borderWidth: 1,
     borderColor: '#DDD',
@@ -626,6 +793,28 @@ const styles = StyleSheet.create({
   },
   labelInput: {fontSize: 10, color: '#888', marginBottom: 2},
   valueInput: {fontSize: 14, color: '#333', fontWeight: '600'},
+
+  modeContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F2F5',
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 12,
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  modeBtnActive: {
+    backgroundColor: '#1976D2',
+    elevation: 2,
+  },
+  modeText: {fontSize: 13, fontWeight: '600', color: '#666', marginLeft: 6},
+  modeTextActive: {color: '#fff'},
 
   scanContainer: {
     flexDirection: 'row',
@@ -639,7 +828,6 @@ const styles = StyleSheet.create({
   },
   scanInput: {flex: 1, fontSize: 16, color: '#333', height: 50},
 
-  // ITEM STYLES
   itemCard: {
     backgroundColor: '#FFF',
     borderRadius: 10,
@@ -652,12 +840,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8F5E9',
     borderColor: '#A5D6A7',
     borderWidth: 1,
-  }, // Hijau Muda jika selesai
+  },
   itemCardLastScanned: {
     borderLeftWidth: 5,
     borderLeftColor: '#1976D2',
     backgroundColor: '#E3F2FD',
-  }, // Biru muda untuk yang baru discan
+  },
 
   itemHeader: {
     flexDirection: 'row',
@@ -689,7 +877,6 @@ const styles = StyleSheet.create({
     borderColor: '#F5F5F5',
   },
   label: {fontSize: 11, color: '#888'},
-
   qtyContainer: {flexDirection: 'row', alignItems: 'center'},
   btnMinus: {
     width: 36,
@@ -703,7 +890,6 @@ const styles = StyleSheet.create({
   qtyDisplay: {alignItems: 'flex-end'},
   qtyNumber: {fontSize: 20, fontWeight: 'bold', color: '#1976D2'},
   qtyTarget: {fontSize: 12, color: '#888', marginTop: -2},
-
   warningText: {
     color: '#D32F2F',
     fontSize: 10,
@@ -730,10 +916,15 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-
-  // Styles untuk Search Modal
   itemKode: {fontWeight: 'bold', color: '#212121', fontSize: 15},
   itemNama: {color: '#555', fontSize: 13},
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
 });
 
 export default PackingListScreen;

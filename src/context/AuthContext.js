@@ -1,5 +1,6 @@
 import React, {createContext, useState, useEffect, useCallback} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import messaging from '@react-native-firebase/messaging';
 import {
   apiClient,
   loginApi,
@@ -20,10 +21,31 @@ export const AuthProvider = ({children}) => {
   const [preAuthToken, setPreAuthToken] = useState(null);
   const [branches, setBranches] = useState([]);
 
-  // --- DEFINISIKAN FUNGSI LOGIN DAN LOGOUT DI SINI (SEBELUM useEffect) ---
+  // --- 1. HELPER (Dibungkus useCallback agar stabil) ---
 
-  // Helper untuk update token (dipanggil setelah setTokenAndInfo)
-  const syncFcmToken = async authToken => {
+  const subscribeToTopic = useCallback(async cabang => {
+    if (!cabang) return;
+    const topic = `approval_${cabang}`;
+    try {
+      await messaging().subscribeToTopic(topic);
+      console.log(`[FCM] Berhasil subscribe ke topic: ${topic}`);
+    } catch (e) {
+      console.error('[FCM] Gagal subscribe topic:', e);
+    }
+  }, []);
+
+  const unsubscribeFromTopic = useCallback(async cabang => {
+    if (!cabang) return;
+    const topic = `approval_${cabang}`;
+    try {
+      await messaging().unsubscribeFromTopic(topic);
+      console.log(`[FCM] Berhasil unsubscribe dari topic: ${topic}`);
+    } catch (e) {
+      console.error('[FCM] Gagal unsubscribe topic:', e);
+    }
+  }, []);
+
+  const syncFcmToken = useCallback(async authToken => {
     try {
       const fcmToken = await AsyncStorage.getItem('fcmToken');
       if (fcmToken && authToken) {
@@ -36,66 +58,84 @@ export const AuthProvider = ({children}) => {
     } catch (error) {
       console.error('Gagal sync FCM Token:', error);
     }
-  };
-
-  const login = useCallback(async (userKode, password) => {
-    // Fungsi ini sekarang bisa melempar error agar ditangani di LoginScreen
-    const response = await loginApi(userKode, password);
-    if (response.data.multiBranch) {
-      // Kasus Multi Cabang
-      setPreAuthToken(response.data.preAuthToken);
-      setBranches(response.data.branches);
-      setBranchSelectionRequired(true);
-    } else {
-      // Kasus Cabang Tunggal
-      const {token, user} = response.data.data;
-      setTokenAndInfo(token, user);
-      syncFcmToken(token);
-    }
   }, []);
+
+  // --- 2. SET STATE UTAMA (Dibungkus useCallback & dependensi ke subscribeToTopic) ---
+
+  const setTokenAndInfo = useCallback(
+    async (token, user) => {
+      setUserToken(token);
+      setUserInfo(user);
+      await AsyncStorage.setItem('userToken', token);
+      await AsyncStorage.setItem('userInfo', JSON.stringify(user));
+      setBranchSelectionRequired(false);
+      setPreAuthToken(null);
+      setBranches([]);
+
+      // Subscribe Topic saat data tersimpan
+      if (user && user.cabang) {
+        subscribeToTopic(user.cabang);
+      }
+    },
+    [subscribeToTopic], // Dependency wajib
+  );
+
+  // --- 3. LOGIN FUNCTIONS (Sekarang aman memanggil setTokenAndInfo) ---
+
+  const login = useCallback(
+    async (userKode, password) => {
+      const response = await loginApi(userKode, password);
+      if (response.data.multiBranch) {
+        setPreAuthToken(response.data.preAuthToken);
+        setBranches(response.data.branches);
+        setBranchSelectionRequired(true);
+      } else {
+        const {token, user} = response.data.data;
+        // Panggil fungsi yang sudah di-memoize
+        await setTokenAndInfo(token, user);
+        await syncFcmToken(token);
+      }
+    },
+    [setTokenAndInfo, syncFcmToken], // Dependency lengkap
+  );
 
   const finalizeLogin = useCallback(
     async branchCode => {
       try {
-        const response = await selectBranchApi(branchCode, preAuthToken); // Panggil API baru
+        const response = await selectBranchApi(branchCode, preAuthToken);
         const {token, user} = response.data.data;
-        setTokenAndInfo(token, user);
-        syncFcmToken(token);
-        setBranchSelectionRequired(false); // Selesaikan proses pemilihan
+        await setTokenAndInfo(token, user);
+        await syncFcmToken(token);
+        setBranchSelectionRequired(false);
       } catch (error) {
-        // Handle error, misal tampilkan Toast
         console.error('Gagal finalisasi login', error);
+        Toast.show({
+          type: 'error',
+          text1: 'Login Gagal',
+          text2: 'Terjadi kesalahan saat memilih cabang',
+        });
       }
     },
-    [preAuthToken],
+    [preAuthToken, setTokenAndInfo, syncFcmToken], // Dependency lengkap
   );
 
-  const setTokenAndInfo = async (token, user) => {
-    setUserToken(token);
-    setUserInfo(user);
-    await AsyncStorage.setItem('userToken', token);
-    await AsyncStorage.setItem('userInfo', JSON.stringify(user));
-    setBranchSelectionRequired(false);
-    setPreAuthToken(null);
-    setBranches([]);
-  };
-
   const logout = useCallback(async () => {
-    // 1. Bersihkan State Utama
+    // Unsubscribe sebelum hapus data
+    if (userInfo && userInfo.cabang) {
+      unsubscribeFromTopic(userInfo.cabang);
+    }
+
     setUserToken(null);
     setUserInfo(null);
-
-    // 2. Bersihkan State Pre-Auth (PENTING AGAR KELUAR DARI BRANCH SELECTION)
     setPreAuthToken(null);
     setBranches([]);
     setBranchSelectionRequired(false);
 
-    // 3. Bersihkan Storage
     await AsyncStorage.removeItem('userToken');
     await AsyncStorage.removeItem('userInfo');
-  }, []);
+  }, [userInfo, unsubscribeFromTopic]);
 
-  // --- useEffect UNTUK INTERCEPTOR DI BAWAHNYA ---
+  // --- 4. EFFECTS ---
 
   useEffect(() => {
     const responseInterceptor = apiClient.interceptors.response.use(
@@ -118,16 +158,19 @@ export const AuthProvider = ({children}) => {
     return () => apiClient.interceptors.response.eject(responseInterceptor);
   }, [logout]);
 
-  // --- useEffect UNTUK MEMERIKSA TOKEN SAAT APLIKASI DIMUAT ---
-
   useEffect(() => {
     const checkTokenOnLoad = async () => {
       try {
         const token = await AsyncStorage.getItem('userToken');
         const userString = await AsyncStorage.getItem('userInfo');
         if (token && userString) {
+          const user = JSON.parse(userString);
           setUserToken(token);
-          setUserInfo(JSON.parse(userString));
+          setUserInfo(user);
+
+          if (user.cabang) {
+            subscribeToTopic(user.cabang);
+          }
         }
       } catch (e) {
         console.error('Gagal mengambil data sesi', e);
@@ -136,7 +179,7 @@ export const AuthProvider = ({children}) => {
       }
     };
     checkTokenOnLoad();
-  }, []);
+  }, [subscribeToTopic]); // Tambahkan subscribeToTopic agar aman
 
   return (
     <AuthContext.Provider
