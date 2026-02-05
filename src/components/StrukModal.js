@@ -1,4 +1,4 @@
-import React, {useMemo, useState, useEffect, useContext} from 'react';
+import React, {useMemo, useState, useEffect, useContext, useRef} from 'react';
 import {
   View,
   Text,
@@ -16,11 +16,9 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import PrinterService from '../services/PrinterService';
-// 1. IMPORT VIEW SHOT & REF
-import ViewShot, {captureRef} from 'react-native-view-shot';
-import {useRef} from 'react';
-import {sendStrukWaImageApi} from '../api/ApiService'; // Import API baru
-import {AuthContext} from '../context/AuthContext'; // Import Context jika butuh token disini, atau pass dari props
+import ViewShot from 'react-native-view-shot';
+import {sendStrukWaImageApi} from '../api/ApiService';
+import {AuthContext} from '../context/AuthContext';
 
 const appLogo = require('../assets/logo.png');
 
@@ -29,23 +27,24 @@ const formatRupiah = angka => {
     style: 'currency',
     currency: 'IDR',
     minimumFractionDigits: 0,
-  }).format(angka);
+  }).format(angka || 0);
 };
 
-const StrukModal = ({visible, onClose, data, onSendWa}) => {
+const StrukModal = ({visible, onClose, data, onSendWa, isBazar = false}) => {
   const viewShotRef = useRef();
-  const {userToken} = useContext(AuthContext); // Ambil token
-  // --- STATE PRINTER ---
+  const {userToken, userInfo} = useContext(AuthContext);
+
+  // --- STATE ---
   const [isPrinting, setIsPrinting] = useState(false);
   const [printers, setPrinters] = useState([]);
   const [showPrinterList, setShowPrinterList] = useState(false);
   const [currentPrinter, setCurrentPrinter] = useState(null);
-
-  // --- STATE WA ---
   const [inputHp, setInputHp] = useState('');
-  const [isSendingWa, setIsSendingWa] = useState(false); // State Loading
+  const [isSendingWa, setIsSendingWa] = useState(false);
 
-  // Reset saat modal dibuka
+  // --- HOOKS: PINDAHKAN KE ATAS (SEBELUM EARLY RETURN) ---
+
+  // 1. Reset saat modal dibuka
   useEffect(() => {
     if (visible) {
       setInputHp('');
@@ -53,22 +52,111 @@ const StrukModal = ({visible, onClose, data, onSendWa}) => {
     }
   }, [visible]);
 
-  // --- 1. MEMO LOGIC ---
-  const donationAmount = useMemo(() => {
-    const items = data?.details || [];
-    const totalQty = items.reduce(
-      (sum, item) => sum + (Number(item.invd_jumlah) || 0),
-      0,
-    );
-    return totalQty * 500;
-  }, [data]);
+  // 2. Mapping Data (displayData) - Menangani Bazar vs Reguler
+  const displayData = useMemo(() => {
+    if (!data || !data.header) return null;
 
-  // --- 2. EARLY RETURN ---
-  if (!data) return null;
+    if (isBazar) {
+      // Fungsi pembantu untuk menentukan nama customer jika data cus_nama kosong
+      const getCustomerName = () => {
+        if (data.header.cus_nama) return data.header.cus_nama;
+        if (data.header.so_customer_nama) return data.header.so_customer_nama;
 
-  const {header, details} = data;
+        // Fallback manual berdasarkan kode (B0100000 -> BAZAR SOLO)
+        const kode = data.header.so_customer || '';
+        if (kode === 'B0100000') return 'BAZAR SOLO';
+        if (kode.endsWith('00000')) return `BAZAR ${kode.substring(0, 3)}`;
 
-  // --- 3. LOGIC PRINTER (Sama seperti sebelumnya) ---
+        return 'UMUM';
+      };
+
+      // Hitung ulang rincian barang untuk tampilan "Harga Ecer"
+      let sumEcerKeseluruhan = 0;
+
+      const displayItems = data.details.map(d => {
+        const promoQty = parseInt(d.promo_qty) || 0;
+        const currentQty = parseFloat(d.qty || d.sod_qty || 0);
+
+        // 1. Tentukan Harga Ecer Riil (Harga sebelum bundling/diskon)
+        let hargaEcerRiil = parseFloat(d.harga_jual) || 0;
+
+        if (promoQty > 1) {
+          // Pakai rumus pinalti ecer (+5rb) agar hematnya terlihat besar
+          hargaEcerRiil = Math.floor(100000 / promoQty) + 5000;
+          if (promoQty === 3) hargaEcerRiil = 38500;
+        }
+
+        // Jika harga_jual di DB masih 0, fallback ke harga nota agar tidak 0 di struk
+        if (hargaEcerRiil <= 0)
+          hargaEcerRiil = parseFloat(d.harga || d.sod_harga || 0);
+
+        const totalBarisEcer = currentQty * hargaEcerRiil;
+        sumEcerKeseluruhan += totalBarisEcer;
+
+        return {
+          nama: d.nama || 'Barang',
+          ukuran: d.ukuran || d.sod_ukuran || '',
+          qty: currentQty,
+          harga: hargaEcerRiil, // Menampilkan harga ecer asli per unit
+          total: totalBarisEcer, // Menampilkan (qty x ecer asli)
+        };
+      });
+
+      const grandTotalBayar = parseFloat(data.header.so_total) || 0;
+      const hematTotal = sumEcerKeseluruhan - grandTotalBayar;
+
+      // Mapping untuk modul BAZAR
+      return {
+        perush_nama: userInfo?.perush_nama || 'KAOSAN BAZAR STORE',
+        perush_alamat: '',
+        perush_telp: userInfo?.perush_telp || '',
+        nomor: data.header.so_nomor,
+        tanggal: data.header.so_tanggal,
+        kasir: data.header.so_user_nama || data.header.so_user_kasir || 'Kasir',
+        customer: getCustomerName(),
+        items: displayItems,
+        subTotal: sumEcerKeseluruhan, // Muncul sebagai "Total" di atas hemat
+        totalHemat: hematTotal > 0 ? hematTotal : 0,
+        grandTotal: grandTotalBayar,
+        bayar: data.header.so_bayar,
+        kembali: data.header.so_kembali,
+        donation:
+          data.details.reduce((s, i) => s + (i.qty || i.sod_qty || 0), 0) * 500,
+      };
+    } else {
+      // Mapping Reguler (Tetap seperti semula)
+      return {
+        perush_nama: data.header.perush_nama,
+        perush_alamat: data.header.perush_alamat,
+        perush_telp: data.header.perush_telp,
+        nomor: data.header.inv_nomor,
+        tanggal: data.header.inv_tanggal,
+        kasir: data.header.user_create,
+        customer: 'Customer',
+        items: data.details.map(d => ({
+          nama: d.nama_barang,
+          ukuran: d.invd_ukuran,
+          qty: d.invd_jumlah,
+          harga: d.invd_harga,
+          diskon: d.invd_diskon,
+          total: d.total,
+        })),
+        subTotal: data.header.subTotal,
+        diskon_faktur: data.header.diskon_faktur,
+        grandTotal: data.header.grandTotal,
+        bayar: data.header.inv_bayar,
+        kembali: data.header.inv_kembali,
+        donation:
+          data.details.reduce((s, i) => s + (Number(i.invd_jumlah) || 0), 0) *
+          500,
+      };
+    }
+  }, [data, isBazar, userInfo]);
+
+  // --- EARLY RETURN DI SINI (SETELAH SEMUA HOOK DIPANGGIL) ---
+  if (!data || !displayData) return null;
+
+  // --- LOGIC PRINTER ---
   const requestBluetoothPermission = async () => {
     if (Platform.OS === 'android') {
       try {
@@ -86,14 +174,6 @@ const StrukModal = ({visible, onClose, data, onSendWa}) => {
         } else {
           const granted = await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-            {
-              title: 'Izin Lokasi & Bluetooth',
-              message:
-                'Aplikasi membutuhkan akses lokasi untuk memindai printer bluetooth.',
-              buttonNeutral: 'Nanti',
-              buttonNegative: 'Batal',
-              buttonPositive: 'OK',
-            },
           );
           return granted === PermissionsAndroid.RESULTS.GRANTED;
         }
@@ -106,12 +186,24 @@ const StrukModal = ({visible, onClose, data, onSendWa}) => {
 
   const handlePrint = async () => {
     const hasPermission = await requestBluetoothPermission();
-    if (!hasPermission) {
-      Alert.alert('Izin Ditolak', 'Mohon izinkan akses Bluetooth.');
-      return;
-    }
+    if (!hasPermission) return;
+
     if (currentPrinter) {
-      executePrint();
+      setIsPrinting(true);
+      try {
+        // Paksa connect ulang sebelum perintah print,
+        // untuk bangunin Bluetooth Xprinter yang tidur/hang
+        await PrinterService.Printer.connectPrinter(
+          currentPrinter.inner_mac_address,
+        );
+        await executePrint();
+      } catch (err) {
+        // Jika gagal, berarti MAC address berubah atau printer mati
+        setCurrentPrinter(null);
+        scanPrinters();
+      } finally {
+        setIsPrinting(false);
+      }
       return;
     }
     scanPrinters();
@@ -141,11 +233,6 @@ const StrukModal = ({visible, onClose, data, onSendWa}) => {
       await PrinterService.Printer.connectPrinter(printer.inner_mac_address);
       setCurrentPrinter(printer);
       setShowPrinterList(false);
-      if (Platform.OS === 'android')
-        ToastAndroid.show(
-          `Terhubung ke ${printer.device_name}`,
-          ToastAndroid.SHORT,
-        );
       await executePrint();
     } catch (err) {
       Alert.alert('Gagal Connect', 'Tidak dapat terhubung.');
@@ -157,7 +244,11 @@ const StrukModal = ({visible, onClose, data, onSendWa}) => {
   const executePrint = async () => {
     setIsPrinting(true);
     try {
-      await PrinterService.printStruk(data);
+      if (isBazar) {
+        await PrinterService.printStrukBazar(data);
+      } else {
+        await PrinterService.printStruk(data);
+      }
     } catch (error) {
       Alert.alert('Gagal Cetak', 'Koneksi printer terputus.');
       setCurrentPrinter(null);
@@ -166,72 +257,30 @@ const StrukModal = ({visible, onClose, data, onSendWa}) => {
     }
   };
 
-  // --- 4. LOGIC KIRIM WA (YANG DIPERBAIKI) ---
-  const handleSendWa = async () => {
-    // 1. Cek Input Kosong
-    if (!inputHp) {
-      Alert.alert('Perhatian', 'Nomor WhatsApp pembeli harus diisi.');
-      return;
-    }
-
-    // LOGGING 1: Cek apa yang diketik user
-    console.log('[FRONTEND - MODAL] Input User:', inputHp);
-
-    setIsSendingWa(true);
-
-    try {
-      // 2. Panggil Fungsi Parent
-      // Kita await agar loading tidak berhenti sebelum proses selesai
-      await onSendWa(inputHp);
-    } catch (error) {
-      console.log('[FRONTEND - MODAL] Error:', error);
-      // Alert ini muncul jika Parent melempar error (throw)
-      Alert.alert('Gagal', 'Terjadi kesalahan di Modal.');
-    } finally {
-      setIsSendingWa(false);
-    }
-  };
-
   const handleSendWaImage = async () => {
     if (!inputHp) {
       Alert.alert('Perhatian', 'Isi nomor HP dulu.');
       return;
     }
-
     setIsSendingWa(true);
-
     try {
-      // 1. CAPTURE LAYAR
-      // result akan berupa path file sementara di HP (misal: /tmp/....jpg)
       const uri = await viewShotRef.current.capture();
-      console.log('Screenshot berhasil:', uri);
-
-      // 2. SIAPKAN FORM DATA
       const formData = new FormData();
-
-      // Object Gambar WAJIB punya 3 ini: uri, type, name
-      const imageFile = {
+      formData.append('image', {
         uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
-        type: 'image/jpeg', // Harus mime type yang valid
-        name: 'struk-belanja.jpg', // Harus ada nama file + ekstensi
-      };
+        type: 'image/jpeg',
+        name: 'struk-belanja.jpg',
+      });
 
-      formData.append('image', imageFile);
-
-      // Masukkan Data Teks
-      // Format nomor HP
       let targetHp = inputHp.replace(/[^0-9]/g, '');
       if (targetHp.startsWith('0')) targetHp = '62' + targetHp.slice(1);
 
       formData.append('hp', targetHp);
-      formData.append('caption', `Struk Belanja No: ${data.header.inv_nomor}`);
+      formData.append('caption', `Struk Belanja No: ${displayData.nomor}`);
 
-      // 3. UPLOAD KE BACKEND
       await sendStrukWaImageApi(formData, userToken);
-
       Alert.alert('Berhasil', 'Struk Gambar terkirim!');
     } catch (error) {
-      console.log('Error Upload:', error);
       Alert.alert('Gagal', 'Gagal mengirim gambar.');
     } finally {
       setIsSendingWa(false);
@@ -246,17 +295,14 @@ const StrukModal = ({visible, onClose, data, onSendWa}) => {
       onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.container}>
-          {/* HEADER */}
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Struk Penjualan</Text>
-            {/* Tombol Close dimatikan saat loading agar user gak close paksa */}
             <TouchableOpacity onPress={onClose} disabled={isSendingWa}>
               <Icon name="x" size={24} color={isSendingWa ? '#ccc' : '#333'} />
             </TouchableOpacity>
           </View>
 
           <ScrollView style={styles.receiptScroll}>
-            {/* TAMPILAN STRUK */}
             <ViewShot ref={viewShotRef} options={{format: 'jpg', quality: 0.9}}>
               <View style={styles.paper}>
                 <View style={styles.centerContent}>
@@ -265,226 +311,151 @@ const StrukModal = ({visible, onClose, data, onSendWa}) => {
                     style={styles.logo}
                     resizeMode="contain"
                   />
-                  <Text style={styles.storeName}>{header.perush_nama}</Text>
-                  <Text style={styles.storeAddress}>
-                    {header.perush_alamat}
+                  <Text style={styles.storeName}>
+                    {displayData.perush_nama}
                   </Text>
-                  <Text style={styles.storeContact}>{header.perush_telp}</Text>
+                  {displayData.perush_alamat !== '' && (
+                    <Text style={styles.storeAddress}>
+                      {displayData.perush_alamat}
+                    </Text>
+                  )}
+                  {displayData.perush_telp ? (
+                    <Text style={styles.storeContact}>
+                      {displayData.perush_telp}
+                    </Text>
+                  ) : null}
                 </View>
 
                 <View style={styles.dashedLine} />
 
-                <View style={styles.rowInfo}>
-                  <Text style={styles.textSmall}>No: {header.inv_nomor}</Text>
-                </View>
-                <View style={styles.rowInfo}>
+                <Text style={styles.textSmall}>No: {displayData.nomor}</Text>
+                <Text style={styles.textSmall}>
+                  Tgl: {new Date(displayData.tanggal).toLocaleString('id-ID')}
+                </Text>
+                <Text style={styles.textSmall}>Kasir: {displayData.kasir}</Text>
+                {isBazar && (
                   <Text style={styles.textSmall}>
-                    Tgl:{' '}
-                    {new Date(header.inv_tanggal).toLocaleDateString('id-ID')}{' '}
-                    {new Date(header.date_create).toLocaleTimeString('en-GB', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                    Pelanggan: {displayData.customer}
                   </Text>
-                </View>
-                <View style={styles.rowInfo}>
-                  <Text style={styles.textSmall}>
-                    Kasir: {header.user_create}
-                  </Text>
-                </View>
-
-                {header.diskon_faktur > 0 && (
-                  <View>
-                    <View style={styles.dashedLine} />
-                    <View style={styles.promoBanner}>
-                      <Text style={styles.promoBannerText}>
-                        *** MENDAPAT PROMO REGULER ***
-                      </Text>
-                    </View>
-                  </View>
                 )}
 
                 <View style={styles.dashedLine} />
 
-                {/* LIST ITEMS */}
-                {details.map((item, index) => (
+                {displayData.items.map((item, index) => (
                   <View key={index} style={styles.itemRow}>
                     <Text style={styles.itemName}>
-                      {item.nama_barang} ({item.invd_ukuran})
+                      {item.nama} {item.ukuran ? `(${item.ukuran})` : ''}
                     </Text>
-                    {item.invd_diskon > 0 ? (
-                      <View>
-                        <View style={styles.priceRow}>
-                          <Text
-                            style={[styles.textSmall, styles.strikeThrough]}>
-                            {item.invd_jumlah} x{' '}
-                            {formatRupiah(item.invd_harga + item.invd_diskon)}
-                          </Text>
-                          <Text
-                            style={[styles.textSmall, styles.strikeThrough]}>
-                            {formatRupiah(
-                              (item.invd_harga + item.invd_diskon) *
-                                item.invd_jumlah,
-                            )}
-                          </Text>
-                        </View>
-                        <View style={styles.priceRow}>
-                          <Text style={styles.textSmall}>
-                            {item.invd_jumlah} x {formatRupiah(item.invd_harga)}
-                            <Text style={styles.promoText}> (Disc)</Text>
-                          </Text>
-                          <Text style={styles.textSmall}>
-                            {formatRupiah(item.total)}
-                          </Text>
-                        </View>
-                      </View>
-                    ) : (
-                      <View style={styles.priceRow}>
-                        <Text style={styles.textSmall}>
-                          {item.invd_jumlah} x {formatRupiah(item.invd_harga)}
-                        </Text>
-                        <Text style={styles.textSmall}>
-                          {formatRupiah(item.total)}
-                        </Text>
-                      </View>
+                    <View style={styles.priceRow}>
+                      <Text style={styles.textSmall}>
+                        {item.qty} x{' '}
+                        {formatRupiah(item.harga + (item.diskon || 0))}
+                      </Text>
+                      <Text style={styles.textSmall}>
+                        {formatRupiah(item.total)}
+                      </Text>
+                    </View>
+                    {item.diskon > 0 && (
+                      <Text style={[styles.promoText, {textAlign: 'right'}]}>
+                        Disc: -{formatRupiah(item.diskon * item.qty)}
+                      </Text>
                     )}
                   </View>
                 ))}
 
                 <View style={styles.dashedLine} />
 
-                {/* SUMMARY */}
                 <View style={styles.summaryRow}>
                   <Text style={styles.textSmall}>Total</Text>
                   <Text style={styles.textSmall}>
-                    {formatRupiah(header.subTotal)}
+                    {formatRupiah(displayData.subTotal)}
                   </Text>
                 </View>
-                {header.diskon_faktur > 0 && (
+                {displayData.diskon_faktur > 0 && (
                   <View style={styles.summaryRow}>
                     <Text style={[styles.textSmall, styles.promoText]}>
-                      Total Diskon
+                      Diskon Faktur
                     </Text>
                     <Text style={[styles.textSmall, styles.promoText]}>
-                      - {formatRupiah(header.diskon_faktur)}
+                      -{formatRupiah(displayData.diskon_faktur)}
+                    </Text>
+                  </View>
+                )}
+                {displayData.totalHemat > 0 && (
+                  <View style={styles.summaryRow}>
+                    <Text
+                      style={[
+                        styles.textSmall,
+                        {color: '#2E7D32', fontWeight: 'bold'},
+                      ]}>
+                      TOTAL HEMAT
+                    </Text>
+                    <Text
+                      style={[
+                        styles.textSmall,
+                        {color: '#2E7D32', fontWeight: 'bold'},
+                      ]}>
+                      -{formatRupiah(displayData.totalHemat)}
                     </Text>
                   </View>
                 )}
                 <View style={styles.summaryRow}>
                   <Text style={styles.textBold}>Grand Total</Text>
                   <Text style={styles.textBold}>
-                    {formatRupiah(header.grandTotal)}
+                    {formatRupiah(displayData.grandTotal)}
                   </Text>
                 </View>
                 <View style={styles.summaryRow}>
                   <Text style={styles.textSmall}>Bayar</Text>
                   <Text style={styles.textSmall}>
-                    {formatRupiah(header.inv_bayar)}
+                    {formatRupiah(displayData.bayar)}
                   </Text>
                 </View>
-                {header.inv_pundiamal > 0 && (
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.textSmall}>Pundi Amal</Text>
-                    <Text style={styles.textSmall}>
-                      {formatRupiah(header.inv_pundiamal)}
-                    </Text>
-                  </View>
-                )}
                 <View style={styles.summaryRow}>
                   <Text style={styles.textSmall}>Kembali</Text>
                   <Text style={styles.textSmall}>
-                    {formatRupiah(header.inv_kembali)}
+                    {formatRupiah(displayData.kembali)}
                   </Text>
                 </View>
 
                 <View style={styles.dashedLine} />
 
                 <View style={styles.centerContent}>
-                  {header.gdg_transferbank && (
-                    <Text
-                      style={[
-                        styles.textSmall,
-                        styles.textCenter,
-                        {marginBottom: 5},
-                      ]}>
-                      Transfer: {header.gdg_transferbank}
-                      {'\n'}
-                      {header.gdg_akun}
-                    </Text>
-                  )}
                   <View style={styles.donationBox}>
                     <Text style={styles.donationText}>
-                      Dengan membeli produk kaosan ini, Kaosan telah
-                      menyisihkan/peduli dengan sesama yg membutuhkan sebesar{' '}
-                      {formatRupiah(donationAmount)}
+                      Donasi Peduli Sesama: {formatRupiah(displayData.donation)}
                     </Text>
                   </View>
-                  <Text style={styles.footerNote}>
-                    BARANG YANG SUDAH DIBELI TIDAK BISA DIKEMBALIKAN
-                  </Text>
                   <Text style={styles.footerNote}>
                     TERIMAKASIH ATAS KUNJUNGAN ANDA
                   </Text>
-                  <View style={styles.socialRow}>
-                    {header.gdg_inv_instagram && (
-                      <Text style={styles.socialText}>
-                        IG: {header.gdg_inv_instagram}
-                      </Text>
-                    )}
-                    {header.gdg_inv_fb && (
-                      <Text style={styles.socialText}>
-                        {' '}
-                        | FB: {header.gdg_inv_fb}
-                      </Text>
-                    )}
-                  </View>
                 </View>
               </View>
             </ViewShot>
 
-            {/* --- INPUT WA --- */}
             <View style={styles.waInputContainer}>
-              <Text style={styles.waLabel}>Kirim Struk ke WhatsApp:</Text>
-              <View
-                style={[
-                  styles.inputBox,
-                  isSendingWa && {backgroundColor: '#f0f0f0'},
-                ]}>
+              <Text style={styles.waLabel}>Kirim Struk WhatsApp:</Text>
+              <View style={styles.inputBox}>
                 <View style={styles.prefixView}>
                   <Text style={styles.prefixText}>+62</Text>
                 </View>
                 <TextInput
-                  style={[styles.textInput, isSendingWa && {color: '#999'}]}
+                  style={styles.textInput}
                   placeholder="8123xxxxxxx"
                   keyboardType="phone-pad"
                   value={inputHp}
                   onChangeText={setInputHp}
-                  placeholderTextColor="#999"
-                  editable={!isSendingWa} // Matikan input saat loading
+                  editable={!isSendingWa}
                 />
               </View>
-              {/* Info Text */}
-              {isSendingWa && (
-                <Text
-                  style={{
-                    fontSize: 11,
-                    color: '#1976D2',
-                    marginTop: 5,
-                    fontStyle: 'italic',
-                  }}>
-                  Sedang memproses pengiriman... (estimasi 3-5 detik)
-                </Text>
-              )}
             </View>
           </ScrollView>
 
-          {/* ACTION BUTTONS */}
           <View style={styles.actions}>
-            {/* BUTTON PRINT */}
             <TouchableOpacity
               style={[styles.btn, styles.btnPrint]}
               onPress={handlePrint}
-              disabled={isPrinting || isSendingWa}>
+              disabled={isPrinting}>
               {isPrinting ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
@@ -495,10 +466,9 @@ const StrukModal = ({visible, onClose, data, onSendWa}) => {
               </Text>
             </TouchableOpacity>
 
-            {/* BUTTON WA (DENGAN LOADING JELAS) */}
             <TouchableOpacity
               style={[styles.btn, styles.btnWa]}
-              onPress={handleSendWaImage} // <--- PANGGIL FUNGSI BARU
+              onPress={handleSendWaImage}
               disabled={isSendingWa}>
               {isSendingWa ? (
                 <ActivityIndicator color="#fff" />
@@ -510,40 +480,30 @@ const StrukModal = ({visible, onClose, data, onSendWa}) => {
           </View>
         </View>
 
-        {/* LIST PRINTER MODAL */}
+        {/* MODAL PILIH PRINTER (Sama seperti sebelumnya) */}
         <Modal
           visible={showPrinterList}
           transparent={true}
-          animationType="fade"
-          onRequestClose={() => setShowPrinterList(false)}>
+          animationType="fade">
           <View style={styles.printerOverlay}>
             <View style={styles.printerContainer}>
               <Text style={styles.printerTitle}>Pilih Printer Bluetooth</Text>
-              {printers.length === 0 ? (
-                <View style={{padding: 20, alignItems: 'center'}}>
-                  <ActivityIndicator size="large" color="#1976D2" />
-                  <Text style={{marginTop: 10}}>Mencari perangkat...</Text>
-                </View>
-              ) : (
-                <ScrollView style={{maxHeight: 300}}>
-                  {printers.map((p, i) => (
-                    <TouchableOpacity
-                      key={i}
-                      style={styles.printerItem}
-                      onPress={() => connectAndPrint(p)}>
-                      <Icon name="printer" size={24} color="#333" />
-                      <View style={{marginLeft: 10}}>
-                        <Text style={{fontWeight: 'bold'}}>
-                          {p.device_name || 'Unknown Device'}
-                        </Text>
-                        <Text style={{fontSize: 12, color: '#666'}}>
-                          {p.inner_mac_address}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              )}
+              <ScrollView style={{maxHeight: 300}}>
+                {printers.map((p, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={styles.printerItem}
+                    onPress={() => connectAndPrint(p)}>
+                    <Icon name="printer" size={24} color="#333" />
+                    <View style={{marginLeft: 10}}>
+                      <Text style={{fontWeight: 'bold'}}>{p.device_name}</Text>
+                      <Text style={{fontSize: 12, color: '#666'}}>
+                        {p.inner_mac_address}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
               <TouchableOpacity
                 style={styles.closePrinterBtn}
                 onPress={() => setShowPrinterList(false)}>
@@ -578,10 +538,8 @@ const styles = StyleSheet.create({
     borderColor: '#eee',
   },
   modalTitle: {fontSize: 18, fontWeight: 'bold', color: '#333'},
-
   receiptScroll: {padding: 15, backgroundColor: '#f0f0f0'},
   paper: {backgroundColor: '#fff', padding: 15, elevation: 2, marginBottom: 15},
-
   centerContent: {alignItems: 'center', marginBottom: 10},
   logo: {width: 60, height: 60, marginBottom: 10},
   storeName: {
@@ -592,7 +550,6 @@ const styles = StyleSheet.create({
   },
   storeAddress: {fontSize: 10, color: '#444', textAlign: 'center'},
   storeContact: {fontSize: 10, color: '#444', textAlign: 'center'},
-
   dashedLine: {
     height: 1,
     borderWidth: 1,
@@ -601,20 +558,9 @@ const styles = StyleSheet.create({
     marginVertical: 8,
     borderRadius: 1,
   },
-
-  promoBanner: {alignItems: 'center', paddingVertical: 5},
-  promoBannerText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#000',
-    textAlign: 'center',
-  },
-
-  rowInfo: {marginBottom: 2},
   itemRow: {marginBottom: 8},
   itemName: {fontSize: 12, fontWeight: 'bold', color: '#000', marginBottom: 2},
   priceRow: {flexDirection: 'row', justifyContent: 'space-between'},
-
   textSmall: {
     fontSize: 11,
     color: '#333',
@@ -626,16 +572,12 @@ const styles = StyleSheet.create({
     color: '#000',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
-  textCenter: {textAlign: 'center'},
-  strikeThrough: {textDecorationLine: 'line-through', color: '#888'},
   promoText: {color: '#D32F2F', fontSize: 10},
-
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 4,
   },
-
   donationBox: {
     borderTopWidth: 1,
     borderBottomWidth: 1,
@@ -651,10 +593,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   footerNote: {fontSize: 9, textAlign: 'center', color: '#333', marginTop: 2},
-  socialRow: {flexDirection: 'row', marginTop: 5},
-  socialText: {fontSize: 9, color: '#555'},
-
-  // --- WA INPUT STYLES ---
   waInputContainer: {
     backgroundColor: '#E3F2FD',
     padding: 15,
@@ -685,8 +623,6 @@ const styles = StyleSheet.create({
   },
   prefixText: {fontWeight: 'bold', color: '#1565C0', fontSize: 12},
   textInput: {flex: 1, paddingHorizontal: 10, fontSize: 14, color: '#333'},
-
-  // --- ACTIONS ---
   actions: {
     flexDirection: 'row',
     padding: 15,
@@ -704,11 +640,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   btnWa: {backgroundColor: '#25D366'},
-  btnDisabled: {backgroundColor: '#BDBDBD'}, // Warna tombol saat disabled/loading
   btnPrint: {backgroundColor: '#1976D2'},
   btnText: {color: '#fff', fontWeight: 'bold'},
-
-  // --- MODAL PRINTER ---
   printerOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',

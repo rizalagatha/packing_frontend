@@ -164,7 +164,89 @@ const printStruk = async data => {
   }
 };
 
+const printStrukBazar = async data => {
+  const {header, details} = data;
+
+  try {
+    // 0. CETAK LOGO
+    try {
+      await BLEPrinter.printImageBase64(LOGO_BASE64, 150);
+    } catch (e) {
+      console.log('Gagal print logo', e);
+    }
+
+    let text = '';
+
+    // 1. HEADER TOKO
+    text += `<C><B>KAOSAN BAZAR</B></C>\n`;
+    text += `<C>Pameran & Event</C>\n`;
+    text += `<C>--------------------------------</C>\n`;
+
+    // 2. INFO NOTA
+    text += `No: ${header.so_nomor}\n`;
+    text += `Tgl: ${new Date(header.so_tanggal).toLocaleDateString('id-ID')}\n`;
+    text += `Kasir: ${header.so_user_nama || header.so_user_kasir}\n`; // Gunakan nama jika ada
+    text += `Cus: ${header.cus_nama || 'UMUM'}\n`;
+    text += `<C>--------------------------------</C>\n`;
+
+    // 3. ITEMS & CALCULATION (Hanya satu loop di sini)
+    let calculatedSubTotal = 0;
+
+    details.forEach(item => {
+      const promoQty = parseInt(item.promo_qty) || 0;
+      const qty = item.sod_qty || item.qty || 0;
+      const unit = item.sod_satuan_kasir || item.unit || 'PCS';
+
+      // Tentukan harga ecer asli (Satuan + Pinalti 5rb)
+      let hargaEcer = item.harga_jual;
+      if (promoQty > 1) {
+        hargaEcer = Math.floor(100000 / promoQty) + 5000;
+        if (promoQty === 3) hargaEcer = 38500;
+      }
+
+      const totalBaris = qty * hargaEcer;
+      calculatedSubTotal += totalBaris;
+
+      // Cetak baris barang
+      text += `${item.nama || 'Barang'}\n`;
+      text += formatRow(
+        `${qty} ${unit} x ${formatRupiah(hargaEcer)}`,
+        formatRupiah(totalBaris),
+      );
+    });
+
+    text += `<C>--------------------------------</C>\n`;
+
+    // 4. SUMMARY (Logika Hemat)
+    const grandTotal = header.so_total || 0;
+    const hemat = calculatedSubTotal - grandTotal;
+
+    text += formatRow('TOTAL', formatRupiah(calculatedSubTotal));
+
+    if (hemat > 0) {
+      // Baris ini akan menunjukkan penghematan pembeli
+      text += formatRow('TOTAL HEMAT', `-${formatRupiah(hemat)}`);
+    }
+
+    text += formatRow('GRAND TOTAL', formatRupiah(grandTotal), true);
+    text += formatRow('BAYAR', formatRupiah(header.so_bayar));
+    text += formatRow('KEMBALI', formatRupiah(header.so_kembali));
+
+    text += `<C>--------------------------------</C>\n`;
+
+    // 5. FOOTER
+    text += `<C>BARANG YANG SUDAH DIBELI</C>\n`;
+    text += `<C>TIDAK BISA DIKEMBALIKAN</C>\n`;
+    text += `<C>TERIMAKASIH</C>\n\n\n`;
+
+    await BLEPrinter.printBill(text);
+  } catch (err) {
+    throw err;
+  }
+};
+
 export default {
   Printer: BLEPrinter,
   printStruk,
+  printStrukBazar,
 };

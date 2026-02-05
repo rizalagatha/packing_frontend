@@ -38,6 +38,12 @@ import ManagementDashboardScreen from './src/screens/ManagementDashboardScreen';
 import PackingListScreen from './src/screens/PackingListScreen';
 import RealTimeStockScreen from './src/screens/RealTimeStockScreen';
 import AmbilBarangScreen from './src/screens/AmbilBarangScreen';
+import BazarSyncScreen from './src/screens/BazarSyncScreen';
+import BazarProductListScreen from './src/screens/BazarProductListScreen';
+import BazarCustomerListScreen from './src/screens/BazarCustomerListScreen';
+import BazarOpnameScreen from './src/screens/BazarOpnameScreen';
+import BazarCashierScreen from './src/screens/BazarCashierScreen';
+import BazarSalesHistoryScreen from './src/screens/BazarSalesHistoryScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -337,6 +343,54 @@ const App = () => {
               name="StokOpname"
               component={StokOpnameScreen}
               options={{title: 'Stok Opname (Offline)'}}
+            />
+            <Stack.Screen
+              name="BazarSync"
+              component={BazarSyncScreen}
+              options={{title: 'Sinkronisasi Bazar'}}
+            />
+            <Stack.Screen
+              name="BazarProductList"
+              component={BazarProductListScreen}
+              options={{
+                title: 'Produk & Harga Bazar',
+              }}
+            />
+            <Stack.Screen
+              name="BazarCustomerList"
+              component={BazarCustomerListScreen}
+              options={{
+                title: 'Pilih Pelanggan',
+                headerStyle: {backgroundColor: '#E91E63'},
+                headerTintColor: '#fff',
+              }}
+            />
+            <Stack.Screen
+              name="BazarOpname"
+              component={BazarOpnameScreen}
+              options={{
+                title: 'Koreksi Stok Bazar',
+                headerStyle: {backgroundColor: '#E91E63'},
+                headerTintColor: '#fff',
+              }}
+            />
+            <Stack.Screen
+              name="BazarCashier"
+              component={BazarCashierScreen}
+              options={{
+                title: 'Kasir Bazar',
+                headerStyle: {backgroundColor: '#E91E63'},
+                headerTintColor: '#fff',
+              }}
+            />
+            <Stack.Screen
+              name="BazarSalesHistory"
+              component={BazarSalesHistoryScreen}
+              options={{
+                title: 'Riwayat Nota Bazar',
+                headerStyle: {backgroundColor: '#E91E63'},
+                headerTintColor: '#fff',
+              }}
             />
           </>
         )}

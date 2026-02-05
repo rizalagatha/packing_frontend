@@ -473,8 +473,8 @@ const ManagementDashboardScreen = ({navigation}) => {
     const isEstuManagerPeriod = today >= startTransfer && today < endTransfer;
 
     // 1. Sidebar Access: Haris, Darul, Estu, Rio tetap bisa buka menu sidebar
-    const sidebarAccess = ['HARIS', 'DARUL', 'ESTU', 'RIO'].some(allowed =>
-      name.includes(allowed),
+    const sidebarAccess = ['HARIS', 'DARUL', 'ESTU', 'RIO', 'SETYO'].some(
+      allowed => name.includes(allowed),
     );
 
     // 2. Authorization Logic:
@@ -1541,19 +1541,27 @@ const ManagementDashboardScreen = ({navigation}) => {
 
                 {/* CONTAINER KANAN */}
                 <View style={styles.rankingRight}>
-                  {/* Animasi Angka */}
-                  <CountUp
-                    value={branch.nominal}
-                    formatter={formatRupiah}
-                    style={styles.branchNominal}
-                  />
+                  <View style={styles.rankingValueRow}>
+                    <Text style={styles.rankingLabelMini}>Real: </Text>
+                    <CountUp
+                      value={branch.nominal}
+                      formatter={formatRupiah}
+                      style={styles.branchNominal}
+                    />
+                  </View>
 
-                  {/* FIX: Tambahkan width: '100%' agar bar muncul */}
+                  <View style={styles.rankingValueRow}>
+                    <Text style={styles.rankingLabelMini}>Tar: </Text>
+                    <Text style={styles.branchTargetMini}>
+                      {formatRupiah(branch.target)}
+                    </Text>
+                  </View>
+
                   <AnimatedBar
                     percentage={branch.ach || 0}
                     color={(branch.ach || 0) >= 100 ? '#4CAF50' : '#1976D2'}
                     height={4}
-                    style={{marginTop: 2, width: '100%'}}
+                    style={{marginTop: 4, width: '100%'}}
                   />
                 </View>
               </View>
@@ -2597,12 +2605,29 @@ const styles = StyleSheet.create({
   rankText: {fontSize: 12, fontWeight: 'bold', color: '#fff'},
   branchName: {fontSize: 14, fontWeight: '600', color: '#333'},
   branchAch: {fontSize: 11, color: '#666'},
-  rankingRight: {alignItems: 'flex-end', width: 100},
+  rankingRight: {
+    alignItems: 'flex-end',
+    width: 140, // Lebarkan sedikit untuk menampung nominal & target
+  },
+  rankingValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  rankingLabelMini: {
+    fontSize: 9,
+    color: '#999',
+    fontWeight: '600',
+  },
   branchNominal: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 4,
+  },
+  branchTargetMini: {
+    fontSize: 11,
+    color: '#666',
+    fontWeight: '500',
   },
   progressBarBg: {
     width: '100%',

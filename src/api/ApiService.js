@@ -405,6 +405,13 @@ export const downloadMasterDataApi = (token, cabangKode) => {
   });
 };
 
+export const downloadMasterLokasiApi = (token, cabangKode) => {
+  return apiClient.get('/stok-opname/download-lokasi', {
+    params: {cabang: cabangKode},
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
 // -> TAMBAHKAN INI (Untuk Upload Hasil Scan)
 export const uploadOpnameResultApi = (data, token) => {
   return apiClient.post('/stok-opname/upload', data, {
@@ -641,6 +648,40 @@ export const saveAmbilBarangApi = (payload, token) => {
 // 3. Load data untuk edit (jika diperlukan)
 export const getAmbilBarangDetailApi = (id, token) => {
   return apiClient.get(`/ambil-barang-form/${id}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Bazar ---
+/**
+ * Mengambil data master barang khusus bazar (dengan harga)
+ */
+export const downloadMasterBazarApi = async (token, cabang) => {
+  try {
+    return await apiClient.get('/bazar/download-master', {
+      params: {cabang}, // Mengirim ?cabang=xxx ke backend
+      headers: {Authorization: `Bearer ${token}`},
+    });
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Mengirim data invoice pameran secara massal (Bulk Upload)
+ */
+export const uploadBazarSalesApi = async (payload, token) => {
+  try {
+    return await apiClient.post('/bazar/upload-sales', payload, {
+      headers: {Authorization: `Bearer ${token}`},
+    });
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const uploadKoreksiBazarApi = (data, token) => {
+  return apiClient.post('/bazar/upload-koreksi', data, {
     headers: {Authorization: `Bearer ${token}`},
   });
 };

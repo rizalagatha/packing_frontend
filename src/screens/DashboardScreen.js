@@ -289,8 +289,17 @@ const DashboardScreen = ({navigation}) => {
     const userBranch = userInfo.cabang;
     const userName = userInfo.nama.toUpperCase();
     if (userBranch !== 'KDC') return false;
-    const allowedNames = ['DARUL', 'HARIS', 'ESTU', 'RIO'];
+    const allowedNames = ['DARUL', 'HARIS', 'ESTU', 'RIO', 'SETYO'];
     return allowedNames.some(name => userName.includes(name));
+  }, [userInfo]);
+
+  const isBazarUser = useMemo(() => {
+    const branch = userInfo?.cabang;
+
+    // User dianggap user bazar jika:
+    // 1. Kode cabangnya dimulai dengan huruf 'B' (B01, B02, dst)
+    // 2. Kode cabangnya adalah 'KDB'
+    return branch?.startsWith('B') || branch === 'KDB';
   }, [userInfo]);
 
   useLayoutEffect(() => {
@@ -374,6 +383,67 @@ const DashboardScreen = ({navigation}) => {
 
   // --- DATA MENU ---
   const allMenus = [
+    // BAZAR / PAMERAN (KHUSUS USER KODE B)
+    {
+      group: 'Bazar / Pameran',
+      title: 'Kasir Bazar',
+      desc: 'Transaksi penjualan offline',
+      iconName: 'monitor', // Icon seperti mesin kasir
+      iconColor: '#E91E63', // Pinkish Red
+      bgColor: '#FCE4EC',
+      onPress: () => navigation.navigate('BazarCashier'),
+      allowed: isBazarUser,
+    },
+    {
+      group: 'Bazar / Pameran',
+      title: 'Sinkronisasi',
+      desc: 'Download harga & Upload nota',
+      iconName: 'refresh-cw',
+      iconColor: '#E91E63',
+      bgColor: '#FCE4EC',
+      onPress: () => navigation.navigate('BazarSync'),
+      allowed: isBazarUser,
+    },
+    {
+      group: 'Bazar / Pameran',
+      title: 'Produk & Harga',
+      desc: 'Lihat katalog produk bazar',
+      iconName: 'tag',
+      iconColor: '#E91E63',
+      bgColor: '#FCE4EC',
+      onPress: () => navigation.navigate('BazarProductList'),
+      allowed: isBazarUser,
+    },
+    {
+      group: 'Bazar / Pameran',
+      title: 'Daftar Pelanggan',
+      desc: 'Cek & cari data customer',
+      iconName: 'users',
+      iconColor: '#E91E63',
+      bgColor: '#FCE4EC',
+      onPress: () => navigation.navigate('BazarCustomerList'),
+      allowed: isBazarUser,
+    },
+    {
+      group: 'Bazar / Pameran',
+      title: 'Koreksi Stok Bazar',
+      desc: 'Penyesuaian stok fisik pameran',
+      iconName: 'edit', // Menggunakan icon edit agar beda dengan Kasir
+      iconColor: '#E91E63',
+      bgColor: '#FCE4EC',
+      onPress: () => navigation.navigate('BazarOpname'),
+      allowed: isBazarUser,
+    },
+    {
+      group: 'Bazar / Pameran',
+      title: 'Riwayat Penjualan',
+      desc: 'Cek nota yang tersimpan di HP',
+      iconName: 'file-text',
+      iconColor: '#E91E63',
+      bgColor: '#FCE4EC',
+      onPress: () => navigation.navigate('BazarSalesHistory'),
+      allowed: isBazarUser,
+    },
     // GUDANG
     {
       group: 'Gudang',
@@ -436,8 +506,9 @@ const DashboardScreen = ({navigation}) => {
       bgColor: '#FFEBEE',
       onPress: () => navigation.navigate('LowStock'),
       allowed:
-        ['KDC', 'KBS'].includes(userInfo?.cabang) ||
-        (userInfo?.cabang?.startsWith('K') && userInfo?.cabang !== 'P04'),
+        (['KDC', 'KBS'].includes(userInfo?.cabang) ||
+          (userInfo?.cabang?.startsWith('K') && userInfo?.cabang !== 'P04')) &&
+        !isBazarUser,
     },
     {
       group: 'Toko',
@@ -449,7 +520,8 @@ const DashboardScreen = ({navigation}) => {
       onPress: () => navigation.navigate('PenjualanList'),
       allowed:
         userInfo?.cabang?.startsWith('K') &&
-        !['KDC', 'KBS'].includes(userInfo?.cabang),
+        !['KDC', 'KBS'].includes(userInfo?.cabang) &&
+        !isBazarUser,
     },
     {
       group: 'Toko',
@@ -461,7 +533,8 @@ const DashboardScreen = ({navigation}) => {
       onPress: () => navigation.navigate('MintaBarang'),
       allowed:
         userInfo?.cabang?.startsWith('K') &&
-        !['KDC', 'KBS'].includes(userInfo?.cabang),
+        !['KDC', 'KBS'].includes(userInfo?.cabang) &&
+        !isBazarUser,
     },
     {
       group: 'Toko',
@@ -471,7 +544,9 @@ const DashboardScreen = ({navigation}) => {
       iconColor: '#0D47A1',
       bgColor: '#E3F2FD',
       onPress: () => navigation.navigate('RealTimeStock'),
-      allowed: userInfo?.cabang?.startsWith('K'), // Tersedia untuk semua cabang toko
+      allowed:
+        userInfo?.cabang?.startsWith('K') &&
+        (!isBazarUser || userInfo?.cabang === 'KDB'),
     },
     // [BARU] MENU OTORISASI UNTUK USER TOKO
     {
@@ -488,7 +563,8 @@ const DashboardScreen = ({navigation}) => {
       // Allowed untuk user cabang Kxx (Toko) selain KDC/KBS
       allowed:
         userInfo?.cabang?.startsWith('K') &&
-        !['KDC', 'KBS'].includes(userInfo?.cabang),
+        !['KDC', 'KBS'].includes(userInfo?.cabang) &&
+        !isBazarUser,
     },
     // ADMIN
     {
@@ -501,7 +577,8 @@ const DashboardScreen = ({navigation}) => {
       onPress: () => navigation.navigate('MutasiStore'),
       allowed:
         userInfo?.cabang?.startsWith('K') &&
-        !['KDC', 'KBS'].includes(userInfo?.cabang),
+        !['KDC', 'KBS'].includes(userInfo?.cabang) &&
+        !isBazarUser,
     },
     {
       group: 'Admin',
@@ -513,7 +590,8 @@ const DashboardScreen = ({navigation}) => {
       onPress: () => navigation.navigate('MutasiTerima'),
       allowed:
         userInfo?.cabang?.startsWith('K') &&
-        !['KDC', 'KBS'].includes(userInfo?.cabang),
+        !['KDC', 'KBS'].includes(userInfo?.cabang) &&
+        !isBazarUser,
     },
     {
       group: 'Admin',
@@ -525,7 +603,8 @@ const DashboardScreen = ({navigation}) => {
       onPress: () => navigation.navigate('ReturAdmin'),
       allowed:
         userInfo?.cabang?.startsWith('K') &&
-        !['KDC', 'KBS'].includes(userInfo?.cabang),
+        !['KDC', 'KBS'].includes(userInfo?.cabang) &&
+        !isBazarUser,
     },
     {
       group: 'Admin',
@@ -547,8 +626,10 @@ const DashboardScreen = ({navigation}) => {
       bgColor: '#ECEFF1',
       onPress: () => navigation.navigate('TerimaSj'),
       allowed:
-        userInfo?.cabang?.startsWith('K') &&
-        !['KDC', 'KBS'].includes(userInfo?.cabang),
+        userInfo?.cabang === 'KDB' ||
+        (userInfo?.cabang?.startsWith('K') &&
+          !['KDC', 'KBS'].includes(userInfo?.cabang) &&
+          !isBazarUser),
     },
     {
       group: 'Admin',
@@ -560,7 +641,8 @@ const DashboardScreen = ({navigation}) => {
       onPress: () => navigation.navigate('LaporanPending'),
       allowed:
         userInfo?.cabang?.startsWith('K') &&
-        !['KDC', 'KBS'].includes(userInfo?.cabang),
+        !['KDC', 'KBS'].includes(userInfo?.cabang) &&
+        !isBazarUser,
     },
     // LAINNYA
     {
@@ -587,7 +669,7 @@ const DashboardScreen = ({navigation}) => {
       iconColor: '#25D366',
       bgColor: '#E8F5E9',
       onPress: () => navigation.navigate('LinkWhatsapp'),
-      allowed: userInfo?.cabang?.startsWith('K'),
+      allowed: userInfo?.cabang?.startsWith('K') && !isBazarUser,
     },
   ];
 

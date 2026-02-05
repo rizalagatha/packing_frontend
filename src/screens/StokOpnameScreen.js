@@ -15,12 +15,14 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  ActivityIndicator,
 } from 'react-native';
 import {AuthContext} from '../context/AuthContext';
 import {
   apiClient,
   getCabangListApi,
   downloadMasterDataApi,
+  downloadMasterLokasiApi,
   uploadOpnameResultApi,
 } from '../api/ApiService';
 import Icon from 'react-native-vector-icons/Feather';
@@ -76,6 +78,13 @@ const StokOpnameScreen = ({navigation}) => {
 
   const [selectedLogItems, setSelectedLogItems] = useState(null);
 
+  const [deviceSuffix, setDeviceSuffix] = useState('');
+
+  const [isLokasiLocked, setIsLokasiLocked] = useState(false);
+
+  const [syncStage, setSyncStage] = useState(''); // 'downloading', 'saving_items', 'saving_loc'
+  const [syncProgress, setSyncProgress] = useState(0);
+
   const lokasiInputRef = useRef(null);
   const scanInputRef = useRef(null);
 
@@ -111,6 +120,24 @@ const StokOpnameScreen = ({navigation}) => {
     loadOperatorName();
   }, []);
 
+  useEffect(() => {
+    const init = async () => {
+      await DB.initDB();
+      refreshList();
+
+      // Ambil 5 digit ID unik
+      const deviceId = await DeviceInfo.getUniqueId();
+      setDeviceSuffix(deviceId.substring(0, 5).toLowerCase());
+    };
+    init();
+  }, []);
+
+  useEffect(() => {
+    if (isLokasiLocked) {
+      scanInputRef.current?.focus();
+    }
+  }, [isLokasiLocked]);
+
   // 2. Fungsi untuk mengubah state sekaligus menyimpan ke storage
   const handleOperatorNameChange = async text => {
     setOperatorName(text);
@@ -141,85 +168,95 @@ const StokOpnameScreen = ({navigation}) => {
     const currentList = listOpname || [];
     const activeLokasi = lokasi.trim().toLowerCase();
 
-    // Filter data yang hanya milik rak ini saja
-    const listPerRak = currentList.filter(
-      item => item.lokasi && item.lokasi.toLowerCase() === activeLokasi,
-    );
+    let targetList = [];
+    if (viewMode === 'ALL') {
+      // Total hanya untuk rak yang sedang diinput
+      targetList = currentList.filter(
+        item => item.lokasi && item.lokasi.toLowerCase() === activeLokasi,
+      );
+    } else {
+      // Total untuk semua yang belum diupload di device ini
+      targetList = currentList.filter(item => item.is_uploaded === 0);
+    }
 
     return {
-      totalSKU: listPerRak.length,
-      totalQty: listPerRak.reduce(
+      totalSKU: targetList.length,
+      totalQty: targetList.reduce(
         (sum, item) => sum + (item.qty_fisik || 0),
         0,
       ),
     };
-  }, [listOpname, lokasi]);
+  }, [listOpname, lokasi, viewMode]);
 
   // --- LOGIC 2: FILTER LIST (Safe Array) ---
   const filteredList = useMemo(() => {
     const currentList = listOpname || [];
-
-    // Ambil lokasi dari input, hapus spasi di depan/belakang
     const activeLokasi = lokasi.trim().toLowerCase();
+    const lowerQ = searchQuery.trim().toLowerCase();
 
-    // Jika input lokasi kosong, grid kosong (sesuai request)
+    // --- 1. MODE PENCARIAN (Cari di semua data) ---
+    if (lowerQ) {
+      return currentList.filter(
+        item =>
+          (item.nama && item.nama.toLowerCase().includes(lowerQ)) ||
+          (item.barcode && item.barcode.includes(lowerQ)) ||
+          (item.lokasi && item.lokasi.toLowerCase().includes(lowerQ)),
+      );
+    }
+
+    // --- 2. MODE TAB: SEMUA BELUM UPLOAD ---
+    if (viewMode === 'GLOBAL') {
+      return currentList.filter(item => item.is_uploaded === 0);
+    }
+
+    // --- 3. MODE TAB: RAK AKTIF ---
     if (!activeLokasi) return [];
 
-    // Filter barang yang lokasinya sama persis dengan input
-    let rackFiltered = currentList.filter(
+    // Ambil SEMUA data di rak tersebut (baik is_uploaded 0 maupun 1)
+    return currentList.filter(
       item => item.lokasi && item.lokasi.toLowerCase() === activeLokasi,
     );
-
-    // Jika ada pencarian tambahan di kolom Cari
-    if (!searchQuery) return rackFiltered;
-
-    const lowerQ = searchQuery.toLowerCase();
-    return rackFiltered.filter(
-      item =>
-        (item.nama && item.nama.toLowerCase().includes(lowerQ)) ||
-        (item.barcode && item.barcode.includes(lowerQ)),
-    );
-  }, [listOpname, lokasi, searchQuery]);
+  }, [listOpname, lokasi, searchQuery, viewMode]);
 
   // --- LOGIC 3: GROUPING DATA (SectionList) ---
   const groupedList = useMemo(() => {
-    if (
-      viewMode !== 'GROUP' ||
-      !filteredList ||
-      !Array.isArray(filteredList) ||
-      filteredList.length === 0
-    ) {
-      return [];
-    }
+    // Hanya grouping jika di mode GLOBAL dan tidak sedang mencari
+    if (viewMode !== 'GLOBAL' || searchQuery) return [];
 
     const groups = {};
-    try {
-      filteredList.forEach(item => {
-        const loc = item.lokasi ? item.lokasi.toUpperCase() : 'TANPA LOKASI';
-        if (!groups[loc]) {
-          groups[loc] = [];
-        }
-        groups[loc].push(item);
-      });
+    filteredList.forEach(item => {
+      const loc = item.lokasi ? item.lokasi.toUpperCase() : 'TANPA LOKASI';
+      if (!groups[loc]) groups[loc] = [];
+      groups[loc].push(item);
+    });
 
-      return Object.keys(groups)
-        .sort()
-        .map(key => ({
-          title: key,
-          data: groups[key],
-          subTotalQty: groups[key].reduce((s, i) => s + (i.qty_fisik || 0), 0),
-        }));
-    } catch (e) {
-      console.error('Error grouping:', e);
-      return [];
-    }
-  }, [filteredList, viewMode]);
+    return Object.keys(groups)
+      .sort()
+      .map(key => ({
+        title: key,
+        data: groups[key],
+        subTotalQty: groups[key].reduce((s, i) => s + (i.qty_fisik || 0), 0),
+      }));
+  }, [filteredList, viewMode, searchQuery]);
 
   // FUNGSI UTILITY: Putar Suara
   const playSound = type => {
     try {
-      const soundName = type === 'success' ? 'beep_success' : 'beep_error';
-      SoundPlayer.playSoundFile(soundName, 'mp3');
+      if (type === 'success') {
+        // Kita coba panggil file dengan nama: beep_success_[ID]
+        // Contoh: beep_success_b552b
+        const customSound = `beep_success_${deviceSuffix}`;
+
+        // Catatan: SoundPlayer akan error jika file tidak ada,
+        // maka kita tangkap di catch untuk memutar suara default.
+        try {
+          SoundPlayer.playSoundFile(customSound, 'mp3');
+        } catch (innerError) {
+          SoundPlayer.playSoundFile('beep_success', 'mp3');
+        }
+      } else {
+        SoundPlayer.playSoundFile('beep_error', 'mp3');
+      }
     } catch (e) {
       console.log(`Tidak bisa memutar suara`, e);
     }
@@ -233,50 +270,97 @@ const StokOpnameScreen = ({navigation}) => {
   };
 
   const handleDownload = async () => {
-    Alert.alert(
-      'Download Master',
-      `Download data master barang? \n(Gudang Aktif: ${targetCabang.kode})`,
-      [
-        {text: 'Batal', style: 'cancel'},
-        {
-          text: 'Ya, Download',
-          onPress: async () => {
-            setIsLoading(true);
-            try {
-              const response = await downloadMasterDataApi(
-                userToken,
-                targetCabang.kode,
+    Alert.alert('Download Master', 'Download data barang & lokasi terbaru?', [
+      {text: 'Batal', style: 'cancel'},
+      {
+        text: 'Ya, Download',
+        onPress: async () => {
+          setIsLoading(true);
+          setSyncProgress(0);
+          try {
+            // TAHAP 1: DOWNLOAD BARANG
+            setSyncStage('downloading_items');
+            const resBarang = await downloadMasterDataApi(
+              userToken,
+              targetCabang.kode,
+            );
+
+            // TAHAP 2: SIMPAN BARANG (Proses Berat)
+            if (resBarang.data?.success) {
+              setSyncStage('saving_items');
+              await DB.insertMasterBarang(
+                resBarang.data.data,
+                (current, total) => {
+                  setSyncProgress(Math.round((current / total) * 100));
+                },
               );
-              const dataBarang = response.data?.data;
-              if (Array.isArray(dataBarang) && dataBarang.length > 0) {
-                await DB.insertMasterBarang(dataBarang);
-                Toast.show({
-                  type: 'success',
-                  text1: 'Selesai',
-                  text2: `${dataBarang.length} data didownload.`,
-                });
-                refreshList();
-              } else {
-                Alert.alert('Kosong', 'Data master tidak ditemukan.');
-              }
-            } catch (error) {
-              Toast.show({
-                type: 'error',
-                text1: 'Gagal',
-                text2: 'Download error.',
-              });
-            } finally {
-              setIsLoading(false);
             }
-          },
+
+            // TAHAP 3: DOWNLOAD & SIMPAN LOKASI
+            setSyncStage('downloading_loc');
+            const resLokasi = await downloadMasterLokasiApi(
+              userToken,
+              targetCabang.kode,
+            );
+            if (resLokasi.data?.success) {
+              setSyncStage('saving_loc');
+              await DB.insertMasterLokasi(resLokasi.data.data);
+            }
+
+            Toast.show({
+              type: 'success',
+              text1: 'Selesai',
+              text2: 'Data Master Opname Berhasil Diperbarui',
+            });
+            refreshList();
+          } catch (error) {
+            console.error(error);
+            Alert.alert('Gagal', 'Gagal sinkronisasi data dari server.');
+          } finally {
+            setIsLoading(false);
+            setSyncStage('');
+            setSyncProgress(0);
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   // --- LOGIKA SCAN (SCAN & COUNT + SOUND) ---
   const handleScan = async () => {
     if (!scannedBarcode) return;
+    const scannedData = scannedBarcode.trim().toUpperCase();
+
+    // --- LOGIKA VALIDASI LOKASI ---
+    if (!isLokasiLocked) {
+      const isLocationValid = await DB.isValidLocation(scannedData);
+
+      if (isLocationValid) {
+        setLokasi(scannedData);
+        setIsLokasiLocked(true);
+        playSound('success');
+        setScannedBarcode(''); // Clear input untuk barang selanjutnya
+        Vibration.vibrate(100);
+        Toast.show({
+          type: 'success',
+          text1: 'Lokasi Terkunci',
+          text2: `Rak: ${scannedData}`,
+        });
+      } else {
+        // WARNING: Lokasi Tidak Valid
+        playSound('error');
+        Vibration.vibrate([0, 500]); // Getar lebih lama untuk error
+        setScannedBarcode(''); // Kosongkan lagi agar bisa coba lagi
+
+        Alert.alert(
+          'Lokasi Tidak Terdaftar',
+          `Kode "${scannedData}" tidak ditemukan di Master Lokasi. Pastikan Anda scan QR Label yang benar.`,
+          [{text: 'Coba Lagi', onPress: () => scanInputRef.current?.focus()}],
+        );
+      }
+      return;
+    }
+
     if (!lokasi) {
       playSound('error');
       Toast.show({
@@ -347,6 +431,34 @@ const StokOpnameScreen = ({navigation}) => {
     // Reset & Fokus Ulang
     setScannedBarcode('');
     setTimeout(() => scanInputRef.current?.focus(), 100);
+  };
+
+  const handleUnlockLokasi = async () => {
+    const hasPending = await DB.checkPendingByLokasi(lokasi);
+
+    if (hasPending) {
+      Alert.alert(
+        'Selesaikan Rak?',
+        'Masih ada data yang belum di-upload. Upload sekarang dan ganti rak?',
+        [
+          {text: 'Batal', style: 'cancel'},
+          {
+            text: 'Ya, Upload & Ganti',
+            onPress: async () => {
+              const success = await handleUpload(); // Panggil fungsi upload yang sudah ada
+              if (success) {
+                setIsLokasiLocked(false);
+                setLokasi('');
+              }
+            },
+          },
+        ],
+      );
+    } else {
+      // Logika buka kunci biasa jika data sudah bersih
+      setIsLokasiLocked(false);
+      setLokasi('');
+    }
   };
 
   const handleUpload = async () => {
@@ -466,6 +578,36 @@ const StokOpnameScreen = ({navigation}) => {
     const logs = await DB.getUploadHistory();
     setUploadLogs(logs);
     setIsHistoryVisible(true);
+  };
+
+  const handleFixEmergency = () => {
+    Alert.alert(
+      '🛠️ Maintenance Data',
+      'Paksa status rak "LBLNEW" menjadi "Belum Upload" agar bisa dikirim ulang ke server?',
+      [
+        {text: 'Batal', style: 'cancel'},
+        {
+          text: 'Ya, Reset LBLNEW',
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              await DB.resetUploadStatusByLocation('LBLNEW');
+              await refreshList(); // Refresh tampilan agar data muncul lagi
+
+              Toast.show({
+                type: 'success',
+                text1: 'Perbaikan Berhasil',
+                text2: 'Rak LBLNEW kini siap diupload ulang.',
+              });
+            } catch (e) {
+              Alert.alert('Gagal Perbaikan', e.message);
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const renderItem = ({item}) => {
@@ -617,7 +759,9 @@ const StokOpnameScreen = ({navigation}) => {
             <View style={styles.headerButtons}>
               <TouchableOpacity
                 style={[styles.btnSmall, {backgroundColor: '#607D8B'}]}
-                onPress={showHistory}>
+                onPress={showHistory}
+                onLongPress={handleFixEmergency} // <-- TAMBAHKAN INI
+              >
                 <Icon name="clock" size={16} color="#fff" />
               </TouchableOpacity>
               <TouchableOpacity
@@ -655,15 +799,27 @@ const StokOpnameScreen = ({navigation}) => {
                 />
               </View>
               <View style={{flex: 1}}>
-                <Text style={styles.label}>Lokasi</Text>
-                <TextInput
-                  ref={lokasiInputRef}
-                  style={[styles.inputLokasi, styles.hideDetails]} //
-                  placeholder="Cth: A01"
-                  value={lokasi}
-                  onChangeText={setLokasi}
-                  maxLength={20}
-                />
+                <Text style={styles.label}>Lokasi (Scan QR)</Text>
+                <View style={styles.lokasiInputWrapper}>
+                  <TextInput
+                    ref={lokasiInputRef}
+                    style={[
+                      styles.inputLokasi,
+                      isLokasiLocked && styles.inputLocked,
+                      styles.hideDetails,
+                    ]}
+                    placeholder="Scan Label Lokasi..."
+                    value={lokasi}
+                    editable={false} // Selalu false karena harus di-scan
+                  />
+                  {isLokasiLocked && (
+                    <TouchableOpacity
+                      style={styles.btnUnlock}
+                      onPress={handleUnlockLokasi}>
+                      <Icon name="edit-3" size={18} color="#D32F2F" />
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             </View>
 
@@ -761,21 +917,22 @@ const StokOpnameScreen = ({navigation}) => {
                     styles.tabText,
                     viewMode === 'ALL' && styles.tabTextActive,
                   ]}>
-                  Semua
+                  Rak Aktif
                 </Text>
               </TouchableOpacity>
+
               <TouchableOpacity
                 style={[
                   styles.tabButton,
-                  viewMode === 'GROUP' && styles.tabActive,
+                  viewMode === 'GLOBAL' && styles.tabActive,
                 ]}
-                onPress={() => setViewMode('GROUP')}>
+                onPress={() => setViewMode('GLOBAL')}>
                 <Text
                   style={[
                     styles.tabText,
-                    viewMode === 'GROUP' && styles.tabTextActive,
+                    viewMode === 'GLOBAL' && styles.tabTextActive,
                   ]}>
-                  Per Rak
+                  Semua Belum Upload
                 </Text>
               </TouchableOpacity>
             </View>
@@ -795,7 +952,7 @@ const StokOpnameScreen = ({navigation}) => {
             <FlatList
               data={filteredList}
               renderItem={renderItem} // Pastikan renderItem menggunakan getRowTextColor
-              keyExtractor={item => item.barcode}
+              keyExtractor={item => item.barcode + item.lokasi}
               contentContainerStyle={{paddingBottom: 80, flexGrow: 1}} // Tambahkan flexGrow: 1 agar pesan ke tengah
               ListEmptyComponent={
                 <View style={styles.emptyStateContainer}>
@@ -852,10 +1009,25 @@ const StokOpnameScreen = ({navigation}) => {
               const detailBarang = item.items_json
                 ? JSON.parse(item.items_json)
                 : [];
+              const daftarLokasi = [
+                ...new Set(detailBarang.map(it => it.lokasi)),
+              ].join(', ');
               return (
                 <View style={styles.logCard}>
                   <View style={{flex: 1}}>
                     <Text style={styles.logDate}>{item.tanggal}</Text>
+
+                    <View style={styles.logInfoRow}>
+                      <Icon name="map" size={10} color="#E67E22" />
+                      <Text
+                        style={[
+                          styles.logSubText,
+                          {color: '#E67E22', fontWeight: 'bold'},
+                        ]}>
+                        {' '}
+                        Rak: {daftarLokasi || 'N/A'}
+                      </Text>
+                    </View>
 
                     <View style={styles.logInfoRow}>
                       <Icon name="map-pin" size={10} color="#666" />
@@ -970,6 +1142,40 @@ const StokOpnameScreen = ({navigation}) => {
             </View>
           </Modal>
         </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={isLoading && syncStage !== ''}
+        transparent={true}
+        animationType="fade">
+        <View style={styles.syncOverlay}>
+          <View style={styles.syncCard}>
+            <ActivityIndicator size="large" color="#1976D2" />
+            <Text style={styles.syncTitle}>Sinkronisasi Data</Text>
+
+            <Text style={styles.syncSub}>
+              {syncStage === 'downloading_items' &&
+                '☁️ Mengunduh data barang...'}
+              {syncStage === 'saving_items' &&
+                `📦 Menyimpan Barang (${syncProgress}%)`}
+              {syncStage === 'downloading_loc' &&
+                '📍 Mengunduh daftar lokasi...'}
+              {syncStage === 'saving_loc' && '💾 Menyimpan data lokasi...'}
+            </Text>
+
+            {syncStage === 'saving_items' && (
+              <View style={styles.progressBarContainer}>
+                <View
+                  style={[styles.progressBarFill, {width: `${syncProgress}%`}]}
+                />
+              </View>
+            )}
+
+            <Text style={styles.syncNote}>
+              Jangan tutup aplikasi selama proses berjalan
+            </Text>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1241,8 +1447,16 @@ const styles = StyleSheet.create({
     borderLeftColor: '#4CAF50',
   },
   logDate: {fontSize: 14, fontWeight: 'bold', color: '#333', marginBottom: 5},
-  logInfoRow: {flexDirection: 'row', alignItems: 'center', marginBottom: 2},
-  logSubText: {fontSize: 11, color: '#666'},
+  logInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3, // Tambah sedikit jarak
+  },
+  logSubText: {
+    fontSize: 11,
+    color: '#666',
+    flexShrink: 1, // Agar teks rak yang panjang tidak merusak layout
+  },
   logQtyBadge: {
     backgroundColor: '#1976D2',
     padding: 10,
@@ -1327,6 +1541,66 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     lineHeight: 20,
+  },
+  inputLocked: {
+    backgroundColor: '#ECEFF1',
+    borderColor: '#B0BEC5',
+    color: '#455A64',
+    borderStyle: 'dashed',
+  },
+  lokasiInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  btnUnlock: {
+    position: 'absolute',
+    right: 10,
+    padding: 5,
+  },
+  // --- SYNC PROGRESS STYLES ---
+  syncOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  syncCard: {
+    backgroundColor: '#fff',
+    width: '85%',
+    borderRadius: 20,
+    padding: 25,
+    alignItems: 'center',
+    elevation: 10,
+  },
+  syncTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 15,
+    color: '#333',
+  },
+  syncSub: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  progressBarContainer: {
+    width: '100%',
+    height: 8,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 4,
+    marginTop: 20,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#1976D2',
+  },
+  syncNote: {
+    fontSize: 11,
+    color: '#999',
+    marginTop: 20,
+    fontStyle: 'italic',
   },
 });
 
