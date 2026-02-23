@@ -1,4 +1,11 @@
-import React, {useState, useContext, useRef, useEffect, useMemo} from 'react';
+import React, {
+  useState,
+  useContext,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+} from 'react';
 import {
   View,
   Text,
@@ -95,7 +102,7 @@ const StokOpnameScreen = ({navigation}) => {
       refreshList();
     };
     init();
-  }, []);
+  }, [refreshList]);
 
   // Update targetCabang jika userInfo berubah (misal relogin tanpa restart app)
   useEffect(() => {
@@ -123,14 +130,15 @@ const StokOpnameScreen = ({navigation}) => {
   useEffect(() => {
     const init = async () => {
       await DB.initDB();
-      refreshList();
+      refreshList(); // Memanggil fungsi yang sudah di-memoize
 
       // Ambil 5 digit ID unik
       const deviceId = await DeviceInfo.getUniqueId();
       setDeviceSuffix(deviceId.substring(0, 5).toLowerCase());
     };
+
     init();
-  }, []);
+  }, [refreshList]);
 
   useEffect(() => {
     if (isLokasiLocked) {
@@ -153,15 +161,15 @@ const StokOpnameScreen = ({navigation}) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
   };
 
-  const refreshList = async () => {
+  const refreshList = useCallback(async () => {
     try {
-      const data = await DB.getHasilOpname();
+      // Fungsi ini sekarang bergantung pada targetCabang.kode
+      const data = await DB.getHasilOpname(targetCabang.kode);
       setListOpname(Array.isArray(data) ? data : []);
     } catch (e) {
-      console.error('Gagal refresh list:', e);
       setListOpname([]);
     }
-  };
+  }, [targetCabang.kode]);
 
   // --- LOGIC 1: DASHBOARD RINGKASAN ---
   const summary = useMemo(() => {
@@ -240,27 +248,36 @@ const StokOpnameScreen = ({navigation}) => {
   }, [filteredList, viewMode, searchQuery]);
 
   // FUNGSI UTILITY: Putar Suara
-  const playSound = type => {
-    try {
-      if (type === 'success') {
-        // Kita coba panggil file dengan nama: beep_success_[ID]
-        // Contoh: beep_success_b552b
-        const customSound = `beep_success_${deviceSuffix}`;
+  const playSound = useCallback(
+    type => {
+      try {
+        if (type === 'success') {
+          // 1. Jika suffix belum siap, langsung putar default agar tidak macet
+          if (!deviceSuffix) {
+            SoundPlayer.playSoundFile('beep_success', 'mp3');
+            return;
+          }
 
-        // Catatan: SoundPlayer akan error jika file tidak ada,
-        // maka kita tangkap di catch untuk memutar suara default.
-        try {
-          SoundPlayer.playSoundFile(customSound, 'mp3');
-        } catch (innerError) {
-          SoundPlayer.playSoundFile('beep_success', 'mp3');
+          // 2. Coba putar suara kustom
+          const customSound = `beep_success_${deviceSuffix}`;
+
+          // Kita tidak bisa hanya mengandalkan try-catch untuk cek file di native
+          // Jadi kita gunakan logika: jika gagal kustom, pastikan catch menjalankan default
+          try {
+            SoundPlayer.playSoundFile(customSound, 'mp3');
+          } catch (innerError) {
+            console.log('File kustom tidak ada, memutar default...');
+            SoundPlayer.playSoundFile('beep_success', 'mp3');
+          }
+        } else {
+          SoundPlayer.playSoundFile('beep_error', 'mp3');
         }
-      } else {
-        SoundPlayer.playSoundFile('beep_error', 'mp3');
+      } catch (e) {
+        console.log(`Tidak bisa memutar suara:`, e.message);
       }
-    } catch (e) {
-      console.log(`Tidak bisa memutar suara`, e);
-    }
-  };
+    },
+    [deviceSuffix],
+  );
 
   const handleSelectCabang = selected => {
     setTargetCabang(selected);
@@ -329,11 +346,16 @@ const StokOpnameScreen = ({navigation}) => {
   // --- LOGIKA SCAN (SCAN & COUNT + SOUND) ---
   const handleScan = async () => {
     if (!scannedBarcode) return;
-    const scannedData = scannedBarcode.trim().toUpperCase();
+    const cleanBarcode = scannedBarcode.trim().replace(/^0+/, '');
+
+    const scannedData = cleanBarcode.toUpperCase();
 
     // --- LOGIKA VALIDASI LOKASI ---
     if (!isLokasiLocked) {
-      const isLocationValid = await DB.isValidLocation(scannedData);
+      const isLocationValid = await DB.isValidLocation(
+        scannedData,
+        targetCabang.kode,
+      );
 
       if (isLocationValid) {
         setLokasi(scannedData);
@@ -372,15 +394,16 @@ const StokOpnameScreen = ({navigation}) => {
       return;
     }
 
-    const cleanBarcode = scannedBarcode.trim();
-
     // Cek Master Barang
-    const masterItem = await DB.getBarangByBarcode(cleanBarcode);
+    const masterItem = await DB.getBarangByBarcode(
+      cleanBarcode,
+      targetCabang.kode,
+    );
 
     if (masterItem) {
       // BARANG DITEMUKAN -> TAMBAH QTY (+1)
       try {
-        await DB.incrementOpnameQty(cleanBarcode, lokasi);
+        await DB.incrementOpnameQty(cleanBarcode, lokasi, targetCabang.kode);
 
         triggerAnimation(); // Animasi saat item muncul/pindah ke atas
         refreshList();
@@ -434,7 +457,7 @@ const StokOpnameScreen = ({navigation}) => {
   };
 
   const handleUnlockLokasi = async () => {
-    const hasPending = await DB.checkPendingByLokasi(lokasi);
+    const hasPending = await DB.checkPendingByLokasi(lokasi, targetCabang.kode);
 
     if (hasPending) {
       Alert.alert(
@@ -462,7 +485,7 @@ const StokOpnameScreen = ({navigation}) => {
   };
 
   const handleUpload = async () => {
-    const dataToUpload = await DB.getPendingOpname();
+    const dataToUpload = await DB.getPendingOpname(targetCabang.kode);
     if (dataToUpload.length === 0) {
       return Toast.show({
         type: 'info',
@@ -517,10 +540,14 @@ const StokOpnameScreen = ({navigation}) => {
               );
 
               // B. [PENTING] Tandai sudah terupload, JANGAN di-clear
-              await DB.markAsUploaded();
+              await DB.markAsUploaded(targetCabang.kode);
 
               refreshList();
-              Toast.show({type: 'success', text1: 'Berhasil Upload Parsial'});
+              Toast.show({
+                type: 'success',
+                text1: 'Berhasil Upload',
+                text2: 'Data kini ditandai sebagai terkirim.',
+              });
             }
           } catch (e) {
             Alert.alert('Gagal', e.message);
@@ -621,8 +648,12 @@ const StokOpnameScreen = ({navigation}) => {
         {
           text: 'Tambah',
           onPress: async () => {
-            await DB.incrementOpnameQty(item.barcode, item.lokasi);
-            triggerAnimation(); // Animasi saat item bergetar/pindah posisi
+            await DB.incrementOpnameQty(
+              item.barcode,
+              item.lokasi,
+              targetCabang.kode,
+            );
+            triggerAnimation();
             refreshList();
           },
         },
@@ -641,7 +672,11 @@ const StokOpnameScreen = ({navigation}) => {
             text: 'Ya, Lanjut',
             style: isDelete ? 'destructive' : 'default',
             onPress: async () => {
-              await DB.decrementOpnameQty(item.barcode, item.lokasi);
+              await DB.decrementOpnameQty(
+                item.barcode,
+                item.lokasi,
+                targetCabang.kode,
+              );
               triggerAnimation();
               refreshList();
             },

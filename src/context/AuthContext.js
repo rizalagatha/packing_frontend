@@ -1,4 +1,10 @@
-import React, {createContext, useState, useEffect, useCallback} from 'react';
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from 'react'; // Tambah useRef
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import messaging from '@react-native-firebase/messaging';
 import {
@@ -8,18 +14,88 @@ import {
   updateFcmTokenApi,
 } from '../api/ApiService';
 import Toast from 'react-native-toast-message';
+import {AppState} from 'react-native';
 
 export const AuthContext = createContext();
+
+// --- FIX: Decoder Base64 yang aman untuk React Native (Tanpa atob) ---
+const decodeToken = token => {
+  try {
+    if (!token) return null;
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+
+    // Menggunakan buffer internal jika ada, atau cara manual yang ringan
+    const chars =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+    let str = base64.replace(/=+$/, '');
+    let output = '';
+
+    if (str.length % 4 === 1) return null;
+
+    for (
+      let bc = 0, bs = 0, buffer, i = 0;
+      (buffer = str.charAt(i++));
+      ~buffer && ((bs = bc % 4 ? bs * 64 + buffer : buffer), bc++ % 4)
+        ? (output += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6))))
+        : 0
+    ) {
+      buffer = chars.indexOf(buffer);
+    }
+    return JSON.parse(output);
+  } catch (e) {
+    console.error('Gagal decode token:', e);
+    return null;
+  }
+};
 
 export const AuthProvider = ({children}) => {
   const [isLoading, setIsLoading] = useState(true);
   const [userToken, setUserToken] = useState(null);
   const [userInfo, setUserInfo] = useState(null);
+  const logoutTimer = useRef(null);
 
   const [isBranchSelectionRequired, setBranchSelectionRequired] =
     useState(false);
   const [preAuthToken, setPreAuthToken] = useState(null);
   const [branches, setBranches] = useState([]);
+
+  // --- FUNGSI BARU: START AUTO LOGOUT TIMER ---
+  const startLogoutTimer = useCallback(
+    token => {
+      // Bersihkan timer lama jika ada
+      if (logoutTimer.current) clearTimeout(logoutTimer.current);
+
+      const decoded = decodeToken(token);
+      if (!decoded || !decoded.exp) return;
+
+      // Hitung sisa waktu (exp dalam detik, Date.now dalam ms)
+      const expirationTime = decoded.exp * 1000;
+      const timeLeft = expirationTime - Date.now();
+
+      if (timeLeft <= 0) {
+        console.log('[AUTH] Token sudah hangus, memaksa logout...');
+        logout();
+      } else {
+        // Pasang "Bom Waktu" otomatis
+        logoutTimer.current = setTimeout(() => {
+          Toast.show({
+            type: 'error',
+            text1: 'Sesi Berakhir',
+            text2: 'Waktu login Anda telah habis, silakan login kembali.',
+          });
+          logout();
+        }, timeLeft);
+
+        console.log(
+          `[AUTH] Auto-logout aktif dalam: ${Math.round(
+            timeLeft / 1000 / 60,
+          )} Menit`,
+        );
+      }
+    },
+    [logout],
+  );
 
   // --- 1. HELPER (Dibungkus useCallback agar stabil) ---
 
@@ -68,16 +144,19 @@ export const AuthProvider = ({children}) => {
       setUserInfo(user);
       await AsyncStorage.setItem('userToken', token);
       await AsyncStorage.setItem('userInfo', JSON.stringify(user));
+
+      // Jalankan Timer saat data diset
+      startLogoutTimer(token);
+
       setBranchSelectionRequired(false);
       setPreAuthToken(null);
       setBranches([]);
 
-      // Subscribe Topic saat data tersimpan
       if (user && user.cabang) {
         subscribeToTopic(user.cabang);
       }
     },
-    [subscribeToTopic], // Dependency wajib
+    [subscribeToTopic, startLogoutTimer],
   );
 
   // --- 3. LOGIN FUNCTIONS (Sekarang aman memanggil setTokenAndInfo) ---
@@ -120,6 +199,9 @@ export const AuthProvider = ({children}) => {
   );
 
   const logout = useCallback(async () => {
+    // Bersihkan timer
+    if (logoutTimer.current) clearTimeout(logoutTimer.current);
+
     // Unsubscribe sebelum hapus data
     if (userInfo && userInfo.cabang) {
       unsubscribeFromTopic(userInfo.cabang);
@@ -145,11 +227,6 @@ export const AuthProvider = ({children}) => {
           error.response &&
           (error.response.status === 401 || error.response.status === 403)
         ) {
-          Toast.show({
-            type: 'error',
-            text1: 'Sesi Kedaluwarsa',
-            text2: 'Silakan login kembali.',
-          });
           logout();
         }
         return Promise.reject(error);
@@ -168,18 +245,32 @@ export const AuthProvider = ({children}) => {
           setUserToken(token);
           setUserInfo(user);
 
-          if (user.cabang) {
-            subscribeToTopic(user.cabang);
-          }
+          // Mulai timer auto-logout saat aplikasi dibuka
+          startLogoutTimer(token);
+
+          if (user.cabang) subscribeToTopic(user.cabang);
         }
       } catch (e) {
-        console.error('Gagal mengambil data sesi', e);
+        console.error('Gagal memuat sesi:', e);
       } finally {
         setIsLoading(false);
       }
     };
     checkTokenOnLoad();
-  }, [subscribeToTopic]); // Tambahkan subscribeToTopic agar aman
+  }, [subscribeToTopic, startLogoutTimer]);
+
+  // Pantau saat aplikasi kembali dari background (Lock screen / pindah app)
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active' && userToken) {
+        console.log(
+          '[AUTH] App kembali aktif, cek ulang masa berlaku token...',
+        );
+        startLogoutTimer(userToken);
+      }
+    });
+    return () => subscription.remove();
+  }, [userToken, startLogoutTimer]);
 
   return (
     <AuthContext.Provider

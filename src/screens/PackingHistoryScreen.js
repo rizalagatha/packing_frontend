@@ -135,9 +135,8 @@ const PackingHistoryScreen = ({navigation}) => {
     async (start, end, page = 1) => {
       if (page === 1) {
         setIsRefreshing(true);
-        setHistory([]); // Kosongkan riwayat jika ini halaman pertama
       } else {
-        setIsLoadingMore(true); // Tampilkan loading di bawah
+        setIsLoadingMore(true);
       }
 
       try {
@@ -146,23 +145,37 @@ const PackingHistoryScreen = ({navigation}) => {
           startDate: formatDate(start),
           endDate: formatDate(end),
           page: page,
-          limit: 15, // Minta 15 item per halaman
+          limit: 15,
         };
+
         const response = await getPackingHistoryApi(params, userToken);
-        if (page === 1) {
-          setHistory(response.data.data);
-        } else {
-          // Jika "load more", tambahkan data baru ke data lama
-          setHistory(prev => [...prev, ...response.data.data]);
-        }
+        const newData = response.data.data || [];
+
+        setHistory(prev => {
+          // Jika halaman 1, langsung pakai data baru
+          if (page === 1) return newData;
+
+          // Gabungkan data lama dan baru
+          const combined = [...prev, ...newData];
+
+          // DEDUPLIKASI: Pakai Map agar super cepat
+          // Kita pakai pack_nomor sebagai ID unik.
+          const uniqueMap = new Map();
+          combined.forEach(item => {
+            uniqueMap.set(item.pack_nomor, item);
+          });
+
+          // Kembalikan ke Array dan urutkan (Descending)
+          return Array.from(uniqueMap.values()).sort((a, b) => {
+            return b.pack_nomor.localeCompare(a.pack_nomor, undefined, {
+              numeric: true,
+            });
+          });
+        });
+
         setPagination(response.data.pagination);
       } catch (error) {
-        console.error('Gagal memuat riwayat packing', error);
-        Toast.show({
-          type: 'error',
-          text1: 'Gagal Memuat',
-          text2: 'Gagal memuat riwayat.',
-        });
+        console.error('Gagal memuat:', error);
       } finally {
         setIsRefreshing(false);
         setIsLoadingMore(false);
@@ -201,8 +214,14 @@ const PackingHistoryScreen = ({navigation}) => {
   };
 
   const handleLoadMore = () => {
-    // Fungsi untuk memuat halaman berikutnya
-    if (pagination.currentPage < pagination.totalPages && !isLoadingMore) {
+    // Kunci: Hanya jalan jika tidak sedang loading, tidak sedang refresh,
+    // dan halaman sekarang belum mencapai halaman terakhir.
+    if (
+      !isLoadingMore &&
+      !isRefreshing &&
+      pagination.currentPage < pagination.totalPages
+    ) {
+      console.log('--- LOADING PAGE:', pagination.currentPage + 1); // Log untuk debug
       fetchHistory(startDate, endDate, pagination.currentPage + 1);
     }
   };
@@ -321,22 +340,21 @@ const PackingHistoryScreen = ({navigation}) => {
 
       <FlatList
         data={history}
-        keyExtractor={item => item.pack_nomor}
+        // Pakai index sebagai tambahan jika pack_nomor ada yang kembar (darurat)
+        keyExtractor={(item, index) => `${item.pack_nomor}-${index}`}
         renderItem={renderItem}
-        extraData={expandedNomor}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>
-              Tidak ada riwayat pada periode ini.
-            </Text>
-          </View>
-        }
+        extraData={expandedNomor} // Penting agar accordion tetap responsif
+        // Optimasi Performa Scroll
+        removeClippedSubviews={true} // Item yang tidak terlihat akan dihapus dari memori
+        initialNumToRender={10} // Render 10 item awal dulu
+        maxToRenderPerBatch={10} // Render 10 item per batch scroll
+        windowSize={5} // Batasi jumlah item yang standby di memori
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.2} // Trigger load more saat sisa 20% scroll
+        ListFooterComponent={renderFooter}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
         }
-        ListFooterComponent={renderFooter}
-        onEndReached={handleLoadMore} // Bisa juga pakai ini untuk infinite scroll
-        onEndReachedThreshold={0.5}
       />
     </SafeAreaView>
   );

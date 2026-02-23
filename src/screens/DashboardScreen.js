@@ -496,6 +496,16 @@ const DashboardScreen = ({navigation}) => {
       // Khusus user KDC yang bisa melakukan pengambilan barang
       allowed: userInfo?.cabang === 'KDC',
     },
+    {
+      group: 'Gudang',
+      title: 'Terima Retur Store', // Judul Menu Baru
+      desc: 'Konfirmasi returan dari toko',
+      iconName: 'corner-left-down', // Icon panah masuk
+      iconColor: '#1976D2',
+      bgColor: '#E3F2FD',
+      onPress: () => navigation.navigate('TerimaReturDc'),
+      allowed: userInfo?.cabang === 'KDC', // Hanya muncul untuk user DC
+    },
     // TOKO
     {
       group: 'Toko',

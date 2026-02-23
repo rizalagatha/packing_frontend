@@ -44,6 +44,7 @@ import BazarCustomerListScreen from './src/screens/BazarCustomerListScreen';
 import BazarOpnameScreen from './src/screens/BazarOpnameScreen';
 import BazarCashierScreen from './src/screens/BazarCashierScreen';
 import BazarSalesHistoryScreen from './src/screens/BazarSalesHistoryScreen';
+import TerimaReturDcScreen from './src/screens/TerimaReturDcScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -391,6 +392,11 @@ const App = () => {
                 headerStyle: {backgroundColor: '#E91E63'},
                 headerTintColor: '#fff',
               }}
+            />
+            <Stack.Screen
+              name="TerimaReturDc"
+              component={TerimaReturDcScreen}
+              options={{title: 'Terima Retur Store'}}
             />
           </>
         )}

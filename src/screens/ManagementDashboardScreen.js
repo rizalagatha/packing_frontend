@@ -878,7 +878,9 @@ const ManagementDashboardScreen = ({navigation}) => {
       const currentFilter =
         filterOverride !== undefined ? filterOverride : dashboardBranchFilter;
 
-      console.log('LOADING ALL DATA for:', currentFilter);
+      console.log('--- START FETCHING DASHBOARD DATA ---');
+      console.log('Target Filter:', currentFilter);
+      console.log('Using Token:', userToken ? 'Available' : 'MISSING');
 
       // Reset Loading
       setLoadingStats(true);
@@ -888,6 +890,47 @@ const ManagementDashboardScreen = ({navigation}) => {
       setLoadingTopProducts(true);
       setLoadingTrends(true);
       setLoadingNegativeStock(true);
+
+      // 1. Fetch Performance (PORT 8000) - INI TERSANGKA UTAMANYA
+      if (userInfo.cabang === 'KDC') {
+        console.log('[LOG] Requesting Branch Performance to Port 8000...');
+        getDashboardBranchPerformanceApi(userToken)
+          .then(res => {
+            console.log(
+              '[LOG] SUCCESS Port 8000: Data Received',
+              res.data?.length,
+              'rows',
+            );
+            if (isMounted.current) {
+              setBranchPerformance(res.data || []);
+              setLoadingBranch(false);
+            }
+          })
+          .catch(err => {
+            console.error('[ERROR] Port 8000 FAILED:', err.message);
+            if (err.response) {
+              console.error(
+                '[ERROR] Details:',
+                err.response.status,
+                err.response.data,
+              );
+              // Jika status 401, berarti JWT Secret masih belum sinkron atau token kadaluarsa
+              if (err.response.status === 401) {
+                Alert.alert(
+                  'Auth Error 8000',
+                  'Token ditolak Port 8000. Coba logout dan login kembali.',
+                );
+              }
+            } else {
+              // Jika Network Error, berarti Port 8000 tertutup firewall
+              Alert.alert(
+                'Network Error 8000',
+                'Tidak bisa akses Port 8000. Cek Firewall Server.',
+              );
+            }
+            if (isMounted.current) setLoadingBranch(false);
+          });
+      }
 
       // Call APIs with Filter
       const filterParam = currentFilter === 'ALL' ? '' : currentFilter; // Backend handle 'ALL' or empty string

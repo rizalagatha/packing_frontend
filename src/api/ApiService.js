@@ -1,10 +1,17 @@
 import axios from 'axios';
 
 // PENTING: Sesuaikan dengan alamat IP Anda!
-const API_URL = 'http://103.94.238.252:3000/api';
+const API_URL = 'http://103.94.238.252:3000/api'; // Port Mobile (3000)
+const API_URL_WEB = 'http://103.94.238.252:8000/api'; // Port Web (8000)
 
+// Instance standar untuk fitur Mobile (Packing, SJ, Bazar, dll)
 export const apiClient = axios.create({
   baseURL: API_URL,
+});
+
+// Instance khusus untuk fitur yang ingin disamakan dengan Web (Dashboard Performance)
+export const apiClientWeb = axios.create({
+  baseURL: API_URL_WEB,
 });
 
 // --- Auth ---
@@ -682,6 +689,33 @@ export const uploadBazarSalesApi = async (payload, token) => {
 
 export const uploadKoreksiBazarApi = (data, token) => {
   return apiClient.post('/bazar/upload-koreksi', data, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Terima Retur DC ---
+export const searchReturToReceiveApi = (params, token) => {
+  return apiClient.get('/terima-retur-dc/search', {
+    params: {term: params.term},
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const loadReturDetailApi = (nomorRb, token) => {
+  const encodedNomor = encodeURIComponent(nomorRb);
+  return apiClient.get(`/terima-retur-dc/load/${encodedNomor}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const savePendingReturDcApi = (data, token) => {
+  return apiClient.post('/terima-retur-dc/pending', data, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const saveTerimaReturDcApi = (data, token) => {
+  return apiClient.post('/terima-retur-dc/save', data, {
     headers: {Authorization: `Bearer ${token}`},
   });
 };

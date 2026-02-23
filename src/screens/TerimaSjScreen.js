@@ -32,8 +32,25 @@ import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
 import SoundPlayer from 'react-native-sound-player';
 
+const GET_DEADLINE_DAYS = branchCode => {
+  const rules = {
+    K01: 3,
+    K03: 3,
+    K06: 3,
+    K08: 3,
+    K02: 5,
+    K04: 5,
+    K05: 5,
+    K07: 5,
+    K09: 5,
+    K11: 5,
+    K10: 7,
+  };
+  return rules[branchCode] || 3;
+};
+
 const TerimaSjScreen = ({navigation}) => {
-  const {userToken} = useContext(AuthContext);
+  const {userToken, userInfo} = useContext(AuthContext);
   const [sjHeader, setSjHeader] = useState(null);
   const [items, setItems] = useState([]);
   const [pendingData, setPendingData] = useState(null);
@@ -247,8 +264,58 @@ const TerimaSjScreen = ({navigation}) => {
     setIsModalVisible(true);
   };
 
+  const deadlineStatus = useMemo(() => {
+    // Pastikan data tersedia sebelum menghitung
+    if (!sjHeader || !userInfo?.cabang) return null;
+
+    const tglSj = new Date(sjHeader.sj_tanggal);
+    const tglSekarang = new Date();
+
+    // Set jam ke 00:00:00 agar perhitungan hari murni berdasarkan tanggal
+    tglSj.setHours(0, 0, 0, 0);
+    tglSekarang.setHours(0, 0, 0, 0);
+
+    // Hitung selisih hari
+    const diffTime = tglSekarang - tglSj;
+    const daysPassed = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    const branch = userInfo.cabang;
+    const deadline = GET_DEADLINE_DAYS(branch);
+
+    let status = 'SAFE';
+    let message = '';
+    let color = '#1976D2'; // Biru default
+
+    if (daysPassed >= deadline + 2) {
+      status = 'AUTO_EXECUTED';
+      message = `Sistem telah mengeksekusi SJ ini (H+2 dari deadline ${deadline} hari).`;
+      color = '#000000'; // Hitam
+    } else if (daysPassed >= deadline + 1) {
+      status = 'WARNING';
+      message = 'WARNING: Batas waktu administratif terlewati (H+1)!';
+      color = '#D32F2F'; // Merah
+    } else {
+      const sisaHari = deadline - daysPassed;
+      message =
+        sisaHari <= 0
+          ? 'Hari terakhir batas administratif.'
+          : `Batas administrasi: ${sisaHari} hari lagi.`;
+      color = daysPassed === deadline ? '#F57C00' : '#4CAF50'; // Oranye jika hari H, Hijau jika masih lama
+    }
+
+    return {status, message, color, daysPassed, deadline};
+  }, [sjHeader, userInfo]);
+
   // Fungsi untuk menyimpan data penerimaan
   const handleSaveFinal = async () => {
+    if (deadlineStatus.status === 'AUTO_EXECUTED') {
+      Alert.alert(
+        'Gagal',
+        'Surat Jalan ini sudah diproses otomatis oleh sistem karena melewati batas H+2.',
+      );
+      return;
+    }
+
     Alert.alert(
       'Konfirmasi Simpan Final',
       'Anda yakin ingin menyimpan penerimaan ini secara final?',
@@ -404,6 +471,20 @@ const TerimaSjScreen = ({navigation}) => {
               No. SJ: {item.sj_nomor} - Tgl:{' '}
               {new Date(item.tanggal).toLocaleDateString('id-ID')}
             </Text>
+            {item.pl_nomor && (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginTop: 2,
+                }}>
+                <Icon name="package" size={12} color="#1976D2" />
+                <Text style={styles.itemPacking}>
+                  {' '}
+                  Ref Packing: {item.pl_nomor}
+                </Text>
+              </View>
+            )}
           </View>
         )}
       />
@@ -441,9 +522,27 @@ const TerimaSjScreen = ({navigation}) => {
           </TouchableOpacity>
         </View>
         {sjHeader && (
-          <Text style={styles.headerDetails}>
-            Dari: {sjHeader.gudang_asal_nama} ({sjHeader.gudang_asal_kode})
-          </Text>
+          <View style={{marginTop: 8}}>
+            <Text style={styles.headerDetails}>
+              Dari: {sjHeader.gudang_asal_nama} ({sjHeader.gudang_asal_kode})
+            </Text>
+
+            {/* Indikator Deadline Administratif */}
+            <View
+              style={[
+                styles.deadlineBadge,
+                {
+                  backgroundColor: deadlineStatus.color + '15',
+                  borderColor: deadlineStatus.color,
+                },
+              ]}>
+              <Icon name="clock" size={14} color={deadlineStatus.color} />
+              <Text
+                style={[styles.deadlineText, {color: deadlineStatus.color}]}>
+                {deadlineStatus.message}
+              </Text>
+            </View>
+          </View>
         )}
       </View>
 
@@ -614,6 +713,25 @@ const styles = StyleSheet.create({
   buttonText: {color: '#FFFFFF', fontWeight: 'bold', fontSize: 16},
   itemKode: {fontWeight: 'bold', color: '#212121'},
   itemNama: {color: '#757575'},
+  itemPacking: {
+    fontSize: 12,
+    color: '#1976D2', // Warna biru agar beda dengan No. SJ
+    fontWeight: '600',
+  },
+  deadlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 6,
+    marginTop: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  deadlineText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
 });
 
 export default TerimaSjScreen;

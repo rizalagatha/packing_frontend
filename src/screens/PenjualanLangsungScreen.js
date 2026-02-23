@@ -334,39 +334,37 @@ const PenjualanLangsungScreen = ({navigation}) => {
     let potentialDiscount = 0;
     let appliedPromoName = '';
 
-    // Cari promo 010 (Kelipatan 250rb)
-    const promo010 = activePromos.find(p => p.pro_nomor === 'PRO-2025-010');
+    // 1. Ambil Data Promo (Gunakan ID PRO-2026-001 sesuai versi web)
+    const promoFebruari = activePromos.find(
+      p => p.pro_nomor === 'PRO-2026-001',
+    );
 
-    // Cari promo 008 (Fallback)
-    const promo008 = activePromos.find(p => p.pro_nomor === 'PRO-2025-008');
+    // 2. Hitung Total Belanja Barang yang Berhak (Eligible)
+    const totalEligible = items.reduce((sum, item) => {
+      const isReguler = item.kategori === 'REGULER';
+      const isJersey = item.nama?.toUpperCase().includes('JERSEY');
+      const isDtf =
+        item.kategori === 'SO-DTF' ||
+        item.kategori === 'SABLON' ||
+        item.nama?.toUpperCase().includes('DTF');
 
-    // Hitung Total Barang REGULER (Exclude Jersey)
-    const totalReguler = items.reduce((sum, item) => {
-      if (
-        item.kategori === 'REGULER' &&
-        !item.nama.toUpperCase().includes('JERSEY')
-      ) {
+      // Syarat: Reguler OR Jersey OR Sablon DTF
+      if (isReguler || isJersey || isDtf) {
         return sum + item.jumlah * item.harga;
       }
       return sum;
     }, 0);
 
-    // Hitung Total Belanja Semua Barang
-    const totalBelanja = items.reduce(
-      (sum, item) => sum + item.jumlah * item.harga,
-      0,
-    );
-
-    // --- CEK SYARAT ---
-    if (promo010 && totalReguler >= 250000) {
-      const kelipatan = Math.floor(totalReguler / 250000);
-      potentialDiscount = 25000 * kelipatan;
-      appliedPromoName = 'PROMO KELIPATAN 25K';
-    } else if (promo008 && totalBelanja >= promo008.pro_totalrp) {
-      // Fallback ke promo 008 jika ada
-      const kelipatan = Math.floor(totalBelanja / promo008.pro_totalrp);
-      potentialDiscount = promo008.pro_disrp * kelipatan;
-      appliedPromoName = promo008.pro_judul;
+    // 3. Logika Tiering Promo
+    if (totalEligible >= 200000) {
+      // TIER 1: Belanja >= 200rb (Berlaku Kelipatan 20rb)
+      const kelipatan = Math.floor(totalEligible / 200000);
+      potentialDiscount = 20000 * kelipatan;
+      appliedPromoName = 'PROMO KELIPATAN 20K';
+    } else if (totalEligible >= 150000) {
+      // TIER 2: Belanja 150rb - 199.999 (Potongan Flat 15rb)
+      potentialDiscount = 15000;
+      appliedPromoName = 'PROMO HEMAT 15K';
     }
 
     // --- KONFIRMASI KE USER ---
@@ -397,7 +395,7 @@ const PenjualanLangsungScreen = ({navigation}) => {
         ],
       );
     } else {
-      // Tidak ada promo, langsung bayar
+      // Tidak mencapai syarat promo (di bawah 150rb)
       setDiskonFaktur(0);
       setPromoApplied('');
       setShowPaymentModal(true);
