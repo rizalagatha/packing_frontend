@@ -218,7 +218,9 @@ const PackingScreen = ({navigation}) => {
   const handleBarcodeScan = useCallback(async () => {
     if (!scannedBarcode || isScanning) return;
 
-    const barcode = scannedBarcode.trim();
+    // 1. TRIM SPASI DAN HAPUS NOL DI DEPAN
+    const barcode = scannedBarcode.trim().replace(/^0+/, '');
+
     setScannedBarcode('');
     setIsScanning(true);
 
