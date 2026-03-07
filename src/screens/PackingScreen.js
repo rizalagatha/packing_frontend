@@ -124,34 +124,44 @@ const PackingScreen = ({navigation}) => {
   const validateAndAddItem = useCallback(
     async (barcode, spk) => {
       if (!spk) {
-        setTimeout(() => barcodeInputRef.current?.focus(), 0);
+        barcodeInputRef.current?.focus();
         return;
       }
 
       try {
-        const gudang = userInfo.cabang;
         const response = await validateBarcodeApi(
           barcode,
-          gudang,
+          userInfo.cabang,
           userToken,
           spk.spkd_nomor,
         );
         const product = response.data.data;
 
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-
-        // ✅ PERUBAHAN UTAMA: Gunakan functional update
         setItems(prevItems => {
           const existingItemIndex = prevItems.findIndex(
             item => item.barcode === barcode,
           );
 
           if (existingItemIndex > -1) {
+            // --- OPTIMASI 1: Update Qty & Pindah ke Atas ---
+            // Kita tidak pakai LayoutAnimation di sini agar UI tidak "kejang" saat scan cepat
             const newItems = [...prevItems];
-            newItems[existingItemIndex].qty =
-              (Number(newItems[existingItemIndex].qty) || 0) + 1;
+            const target = newItems[existingItemIndex];
+
+            target.qty = (Number(target.qty) || 0) + 1;
+
+            // Logika pindah ke paling atas agar user langsung lihat perubahannya
+            newItems.splice(existingItemIndex, 1);
+            newItems.unshift(target);
+
             return newItems;
           } else {
+            // --- OPTIMASI 2: Animasi Hanya untuk Item Baru ---
+            // UI Thread Android lebih enteng jika animasi hanya dipicu saat jumlah baris bertambah
+            LayoutAnimation.configureNext(
+              LayoutAnimation.Presets.easeInEaseOut,
+            );
+
             const newItem = {
               barcode: product.barcode,
               kode: product.kode,
@@ -172,11 +182,13 @@ const PackingScreen = ({navigation}) => {
         playSound('error');
       }
 
-      setTimeout(() => {
+      // --- OPTIMASI 3: Refocus Tanpa Delay ---
+      // Gunakan requestAnimationFrame agar fokus tidak bertabrakan dengan proses render React
+      requestAnimationFrame(() => {
         barcodeInputRef.current?.focus();
-      }, 0);
+      });
     },
-    [userInfo.cabang, userToken, playSound], // ✅ Dependency disederhanakan
+    [userInfo.cabang, userToken, playSound],
   );
 
   const handleSelectSpk = useCallback(
@@ -216,17 +228,19 @@ const PackingScreen = ({navigation}) => {
   );
 
   const handleBarcodeScan = useCallback(async () => {
-    if (!scannedBarcode || isScanning) return;
+    // 1. Ambil nilai mentah segera
+    const rawBarcode = scannedBarcode;
+    if (!rawBarcode || isScanning) return;
 
-    // 1. TRIM SPASI DAN HAPUS NOL DI DEPAN
-    const barcode = scannedBarcode.trim().replace(/^0+/, '');
-
+    // 2. RESPON INSTAN: Bersihkan input & Mainkan suara duluan agar user merasa cepat
     setScannedBarcode('');
+    // playSound('success'); // Opsi: Bunyi "tik" kecil atau beep sukses awal
+
+    const barcode = rawBarcode.trim().replace(/^0+/, '');
     setIsScanning(true);
 
     try {
       if (!selectedSpk) {
-        // --- Alur Scan Pertama: Pilih SPK dulu ---
         const response = await searchSpkByBarcodeApi(barcode, userToken);
         const spkData = response.data.data.items;
 
@@ -234,38 +248,33 @@ const PackingScreen = ({navigation}) => {
           Toast.show({
             type: 'error',
             text1: 'Tidak Ditemukan',
-            text2: 'Tidak ada SPK yang terkait dengan barcode ini.',
+            text2: 'Barcode tidak terkait SPK.',
           });
           playSound('error');
           return;
         }
 
         if (spkData.length === 1) {
-          // Pilih otomatis jika cuma satu
           handleSelectSpk(spkData[0], barcode);
         } else {
-          // Jika lebih dari satu → tampilkan pilihan
           setSpkOptions(spkData);
           setInitialBarcode(barcode);
           setSpkModalVisible(true);
         }
       } else {
-        // --- Alur Scan Berikutnya ---
-        // Pakai SPK yang sudah terkunci, tanpa buka modal lagi
+        // --- Scan Berikutnya ---
         await validateAndAddItem(barcode, selectedSpk);
       }
     } catch (error) {
-      const message =
-        error.response?.data?.message ||
-        'Terjadi kesalahan saat memproses barcode.';
+      const message = error.response?.data?.message || 'Error koneksi.';
       Toast.show({type: 'error', text1: 'Error', text2: message});
       playSound('error');
     } finally {
+      // 3. Kembalikan fokus secepat mungkin tanpa menunggu render selesai
       setIsScanning(false);
-      setTimeout(() => {
-        barcodeInputRef.current?.blur();
+      requestAnimationFrame(() => {
         barcodeInputRef.current?.focus();
-      }, 100);
+      });
     }
   }, [
     scannedBarcode,
@@ -446,7 +455,9 @@ const PackingScreen = ({navigation}) => {
               blurOnSubmit={false}
               autoFocus={true}
               placeholderTextColor="#A0AEC0"
-              editable={!isScanning}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="default"
             />
           </View>
         </View>
@@ -456,7 +467,11 @@ const PackingScreen = ({navigation}) => {
         <FlatList
           data={items}
           renderItem={renderItem}
-          keyExtractor={(item, index) => `${item.barcode}-${index}`}
+          keyExtractor={item => item.barcode}
+          initialNumToRender={10}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+          removeClippedSubviews={true}
           style={styles.list}
           ListHeaderComponent={
             <Text style={styles.listHeaderText}>Item yang di-Scan</Text>
