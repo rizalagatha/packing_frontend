@@ -102,17 +102,31 @@ const StokOpnameScreen = ({navigation}) => {
   const scanInputRef = useRef(null);
 
   const refreshList = useCallback(async () => {
+    // 1. Refresh Data List Utama
     try {
       const data = await DB.getHasilOpname(targetCabang.kode);
-
       setListOpname(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.log('Error Load List:', e);
+      setListOpname([]);
+    }
 
+    // 2. Refresh Summary Karung/PL
+    try {
       if (lokasi) {
         const bulk = await DB.getBulkSummary(lokasi, targetCabang.kode);
-        setBulkSummary(bulk);
+        // Pastikan bulk berisi default nol jika undefined
+        setBulkSummary({
+          totalPack: bulk.totalPack || 0,
+          totalPl: bulk.totalPl || 0,
+          totalBulk: bulk.totalBulk || 0,
+        });
+      } else {
+        setBulkSummary({totalPack: 0, totalPl: 0, totalBulk: 0});
       }
     } catch (e) {
-      setListOpname([]);
+      console.log('Error Load Bulk Summary:', e);
+      setBulkSummary({totalPack: 0, totalPl: 0, totalBulk: 0});
     }
   }, [targetCabang.kode, lokasi]);
 
@@ -887,11 +901,43 @@ const StokOpnameScreen = ({navigation}) => {
             {item.barcode} | Ukuran: {item.ukuran}
           </Text>
           <View
-            style={[
-              styles.badgeLokasi,
-              isUploaded && {backgroundColor: '#BDC3C7'},
-            ]}>
-            <Text style={styles.textLokasi}>{item.lokasi}</Text>
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              gap: 6,
+              marginTop: 6,
+            }}>
+            {/* Badge Lokasi / Rak */}
+            <View
+              style={[
+                styles.badgeLokasi,
+                {marginTop: 0}, // Hilangkan marginTop karena sudah pakai gap dari parent
+                isUploaded && {backgroundColor: '#BDC3C7'},
+              ]}>
+              <Text style={styles.textLokasi}>{item.lokasi}</Text>
+            </View>
+
+            {/* --- [BARU] Badge Packing Khusus KDC --- */}
+            {targetCabang.kode === 'KDC' && item.no_pack && (
+              <View
+                style={[
+                  styles.badgeLokasi,
+                  {backgroundColor: '#4CAF50', marginTop: 0},
+                ]}>
+                <Text style={styles.textLokasi}>PK: {item.no_pack}</Text>
+              </View>
+            )}
+
+            {/* --- [BARU] Badge Packing List Khusus KDC --- */}
+            {targetCabang.kode === 'KDC' && item.no_pl && (
+              <View
+                style={[
+                  styles.badgeLokasi,
+                  {backgroundColor: '#9C27B0', marginTop: 0},
+                ]}>
+                <Text style={styles.textLokasi}>PL: {item.no_pl}</Text>
+              </View>
+            )}
           </View>
         </View>
 

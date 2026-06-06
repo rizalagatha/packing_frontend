@@ -1172,54 +1172,121 @@ export const insertPackingToOpname = async (
 ) => {
   if (!db) await initDB();
   const tgl = new Date().toISOString();
-  const cleanLokasi = String(lokasi).trim().toUpperCase();
-  const cleanCabang = String(cabang).trim().toUpperCase();
+  const cleanLokasi = String(lokasi || '')
+    .trim()
+    .toUpperCase();
+  const cleanCabang = String(cabang || '')
+    .trim()
+    .toUpperCase();
 
-  await db.transaction(async tx => {
-    for (const item of packingItems) {
-      const cleanBarcode = String(
-        item.packd_barcode || item.barcode || item.Kode,
-      ).trim();
+  // Pastikan parameter berbentuk string yang bersih
+  const safeNoPl = String(noPl || '').trim();
+  const safeNoPack = String(noPack || '').trim();
 
-      const qty =
-        parseFloat(item.packd_qty || item.qty || item.jumlah || item.Jumlah) ||
-        0;
+  // KITA HAPUS `db.transaction(tx)` YANG BIKIN ERROR SILENT CRASH TADI
+  for (const item of packingItems) {
+    const rawBarcode = item.packd_barcode || item.barcode || item.Kode || '';
+    const cleanBarcode = String(rawBarcode).trim();
 
-      const [check] = await db.executeSql(
-        `SELECT qty_fisik
-     FROM hasil_opname
-     WHERE barcode = ?
-       AND lokasi = ?
-       AND cabang = ?
-       AND is_uploaded = 0`,
-        [cleanBarcode, cleanLokasi, cleanCabang],
+    const qty =
+      parseFloat(item.packd_qty || item.qty || item.jumlah || item.Jumlah) || 0;
+
+    if (!cleanBarcode) continue;
+
+    // --- 1. Auto-save master barang (Aman dari crash) ---
+    try {
+      const [cekBarang] = await db.executeSql(
+        'SELECT barcode FROM barang WHERE barcode = ?',
+        [cleanBarcode],
       );
 
-      if (check.rows.length > 0) {
-        const currentQty = check.rows.item(0).qty_fisik;
+      if (cekBarang.rows.length === 0) {
+        const itemNama = String(
+          item.nama || item.brg_kaosan || item.Nama || 'Barang Baru',
+        );
+        const itemUkuran = String(
+          item.ukuran || item.packd_size || item.Ukuran || '',
+        );
+        const itemKode = String(
+          item.kode || item.pld_kode || item.Kode || cleanBarcode,
+        );
 
         await db.executeSql(
-          `UPDATE hasil_opname
-       SET qty_fisik = ?, tgl_scan = ?
+          'INSERT INTO barang (barcode, kode, nama, ukuran, lokasi, stok_sistem) VALUES (?, ?, ?, ?, ?, ?)',
+          [cleanBarcode, itemKode, itemNama, itemUkuran, '', 0],
+        );
+      }
+    } catch (e) {
+      console.log('Ignore auto-save error');
+    }
+
+    // --- 2. Insert/Update ke Rak ---
+    const [check] = await db.executeSql(
+      `SELECT qty_fisik, no_pl, no_pack
+       FROM hasil_opname
        WHERE barcode = ?
          AND lokasi = ?
          AND cabang = ?
          AND is_uploaded = 0`,
-          [currentQty + qty, tgl, cleanBarcode, cleanLokasi, cleanCabang],
-        );
-      } else {
-        await db.executeSql(
-          `INSERT INTO hasil_opname
-       (barcode, qty_fisik, lokasi, cabang, tgl_scan, is_uploaded, no_pl, no_pack)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
-          [cleanBarcode, qty, cleanLokasi, cleanCabang, tgl, noPl, noPack],
-        );
+      [cleanBarcode, cleanLokasi, cleanCabang],
+    );
+
+    if (check.rows.length > 0) {
+      const existingRow = check.rows.item(0);
+      const currentQty = existingRow.qty_fisik;
+
+      let mergedNoPack = String(existingRow.no_pack || '');
+      let mergedNoPl = String(existingRow.no_pl || '');
+
+      // Gabungkan Pack Jika Beda
+      if (safeNoPack && !mergedNoPack.includes(safeNoPack)) {
+        mergedNoPack = mergedNoPack
+          ? `${mergedNoPack}, ${safeNoPack}`
+          : safeNoPack;
       }
+
+      // Gabungkan PL Jika Beda
+      if (safeNoPl && !mergedNoPl.includes(safeNoPl)) {
+        mergedNoPl = mergedNoPl ? `${mergedNoPl}, ${safeNoPl}` : safeNoPl;
+      }
+
+      await db.executeSql(
+        `UPDATE hasil_opname
+         SET qty_fisik = ?, tgl_scan = ?, no_pack = ?, no_pl = ?
+         WHERE barcode = ?
+           AND lokasi = ?
+           AND cabang = ?
+           AND is_uploaded = 0`,
+        [
+          currentQty + qty,
+          tgl,
+          mergedNoPack,
+          mergedNoPl,
+          cleanBarcode,
+          cleanLokasi,
+          cleanCabang,
+        ],
+      );
+    } else {
+      await db.executeSql(
+        `INSERT INTO hasil_opname
+         (barcode, qty_fisik, lokasi, cabang, tgl_scan, is_uploaded, no_pl, no_pack)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
+        [
+          cleanBarcode,
+          qty,
+          cleanLokasi,
+          cleanCabang,
+          tgl,
+          safeNoPl,
+          safeNoPack,
+        ],
+      );
     }
-  });
+  }
 };
 
-// Cek apakah karung/PL sudah pernah discan di rak ini dan belum diupload
+// Pastikan fungsi checkBulkExists dan deleteBulkOpname bisa menangani string gabungan menggunakan LIKE
 export const checkBulkExists = async (
   nomorBulk,
   lokasi,
@@ -1229,13 +1296,12 @@ export const checkBulkExists = async (
   if (!db) await initDB();
   const column = isPl ? 'no_pl' : 'no_pack';
   const [res] = await db.executeSql(
-    `SELECT COUNT(*) as count FROM hasil_opname WHERE ${column} = ? AND lokasi = ? AND cabang = ? AND is_uploaded = 0`,
-    [nomorBulk, lokasi, cabang],
+    `SELECT COUNT(*) as count FROM hasil_opname WHERE ${column} LIKE ? AND lokasi = ? AND cabang = ? AND is_uploaded = 0`,
+    [`%${nomorBulk}%`, lokasi, cabang],
   );
   return res.rows.item(0).count > 0;
 };
 
-// Hapus semua isi karung/PL dari rak tersebut
 export const deleteBulkOpname = async (
   nomorBulk,
   lokasi,
@@ -1245,11 +1311,10 @@ export const deleteBulkOpname = async (
   if (!db) await initDB();
   const column = isPl ? 'no_pl' : 'no_pack';
   await db.executeSql(
-    `DELETE FROM hasil_opname WHERE ${column} = ? AND lokasi = ? AND cabang = ? AND is_uploaded = 0`,
-    [nomorBulk, lokasi, cabang],
+    `DELETE FROM hasil_opname WHERE ${column} LIKE ? AND lokasi = ? AND cabang = ? AND is_uploaded = 0`,
+    [`%${nomorBulk}%`, lokasi, cabang],
   );
 };
-
 // Fungsi khusus untuk update Qty Opname secara manual (KDC)
 export const updateOpnameQtyManual = async (
   barcode,
@@ -1265,42 +1330,49 @@ export const updateOpnameQtyManual = async (
   );
 };
 
+// [PERBAIKAN FUNGSI SUMMARY BULK]
+// Karena no_pack dan no_pl sekarang bisa berisi "PACK1, PACK2",
+// query perhitungan unik sebelumnya via "SELECT DISTINCT no_pack" akan gagal menghitung dengan akurat.
+// Kita harus membaca semua datanya, memecah string dengan koma, lalu menggunakan Javascript Set.
 export const getBulkSummary = async (lokasi, cabang) => {
   if (!db) await initDB();
 
   const cleanLokasi = String(lokasi).trim().toUpperCase();
   const cleanCabang = String(cabang).trim().toUpperCase();
 
-  const [packRes] = await db.executeSql(
-    `
-      SELECT COUNT(DISTINCT no_pack) as total
-      FROM hasil_opname
-      WHERE lokasi = ?
-        AND cabang = ?
-        AND is_uploaded = 0
-        AND no_pack IS NOT NULL
-        AND no_pack <> ''
-    `,
+  const [res] = await db.executeSql(
+    `SELECT no_pack, no_pl 
+     FROM hasil_opname 
+     WHERE lokasi = ? AND cabang = ? AND is_uploaded = 0`,
     [cleanLokasi, cleanCabang],
   );
 
-  const [plRes] = await db.executeSql(
-    `
-      SELECT COUNT(DISTINCT no_pl) as total
-      FROM hasil_opname
-      WHERE lokasi = ?
-        AND cabang = ?
-        AND is_uploaded = 0
-        AND no_pl IS NOT NULL
-        AND no_pl <> ''
-    `,
-    [cleanLokasi, cleanCabang],
-  );
+  const packSet = new Set();
+  const plSet = new Set();
+
+  for (let i = 0; i < res.rows.length; i++) {
+    const row = res.rows.item(i);
+
+    if (row.no_pack) {
+      String(row.no_pack)
+        .split(',')
+        .forEach(p => {
+          if (p.trim()) packSet.add(p.trim());
+        });
+    }
+
+    if (row.no_pl) {
+      String(row.no_pl)
+        .split(',')
+        .forEach(p => {
+          if (p.trim()) plSet.add(p.trim());
+        });
+    }
+  }
 
   return {
-    totalPack: packRes.rows.item(0).total || 0,
-    totalPl: plRes.rows.item(0).total || 0,
-    totalBulk:
-      (packRes.rows.item(0).total || 0) + (plRes.rows.item(0).total || 0),
+    totalPack: packSet.size,
+    totalPl: plSet.size,
+    totalBulk: packSet.size + plSet.size,
   };
 };
