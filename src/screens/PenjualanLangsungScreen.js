@@ -57,6 +57,12 @@ const PenjualanLangsungScreen = ({navigation}) => {
   const [diskonFaktur, setDiskonFaktur] = useState(0); // -> State Diskon Global
   const [promoApplied, setPromoApplied] = useState(''); // -> Nama promo yang dipakai
 
+  const [qris, setQris] = useState('');
+  const [qrisAccount, setQrisAccount] = useState(null);
+  const [rekeningSearchCaller, setRekeningSearchCaller] = useState('transfer');
+
+  const [isBazaarMode, setIsBazaarMode] = useState(false);
+
   // UI State
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -92,9 +98,12 @@ const PenjualanLangsungScreen = ({navigation}) => {
   }, [items, diskonFaktur]);
 
   const kembalian = useMemo(() => {
-    const bayar = (parseInt(tunai) || 0) + (parseInt(transfer) || 0);
+    const bayar =
+      (parseInt(tunai) || 0) +
+      (parseInt(transfer) || 0) +
+      (parseInt(qris) || 0); // <--- TAMBAH QRIS DI SINI
     return Math.max(bayar - totals.grandTotal, 0);
-  }, [tunai, transfer, totals.grandTotal]);
+  }, [tunai, transfer, qris, totals.grandTotal]);
 
   // Helper Audio & Haptic
   const playFeedback = type => {
@@ -208,7 +217,12 @@ const PenjualanLangsungScreen = ({navigation}) => {
     else {
       setIsLoading(true);
       try {
-        const response = await scanProdukPenjualanApi(barcode, userToken);
+        const targetCabang = isBazaarMode ? 'K01' : '';
+        const response = await scanProdukPenjualanApi(
+          barcode,
+          targetCabang,
+          userToken,
+        );
         const product = response.data.data;
         const finalPrice = Number(product.harga || 0);
 
@@ -261,6 +275,21 @@ const PenjualanLangsungScreen = ({navigation}) => {
   // Helper kecil untuk menambah item (agar tidak duplikat kode)
   const addItemToCart = (product, finalPrice) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
+
+    // --- LOGIKA DISKON ITEM KHUSUS (BAZAAR 15%) ---
+    const promoCodes = [
+      'KO-CB24-CPOL-003', // Panjang Coklat Polisi
+      'KO-CB24-CAGR-002', // Panjang Cactus Green
+      'KO-CB24-CPOL-002', // Pendek Coklat Polisi
+      'KO-CB24-CAGR-001', // Pendek Cactus Green
+    ];
+
+    let diskonPerPcs = 0;
+    // Jika kode barang (base code) masuk dalam daftar promo, hitung 15% dari harga
+    if (promoCodes.includes(product.kode)) {
+      diskonPerPcs = finalPrice * 0.15;
+    }
+
     const newItem = {
       kode: product.kode,
       nama: product.nama,
@@ -268,7 +297,7 @@ const PenjualanLangsungScreen = ({navigation}) => {
       barcode: product.barcode,
       harga: finalPrice,
       jumlah: 1,
-      diskonRp: 0,
+      diskonRp: diskonPerPcs,
       stok: product.stok,
       kategori: product.kategori || '',
     };
@@ -317,54 +346,91 @@ const PenjualanLangsungScreen = ({navigation}) => {
     );
   };
 
+  const openTransferSearch = () => {
+    setRekeningSearchCaller('transfer');
+    setRekeningModalVisible(true);
+  };
+
+  const openQrisSearch = () => {
+    setRekeningSearchCaller('qris');
+    setRekeningModalVisible(true);
+  };
+
   const onRekeningSelected = rekening => {
-    setBankAccount(rekening);
+    if (rekeningSearchCaller === 'transfer') {
+      setBankAccount(rekening);
+    } else {
+      setQrisAccount(rekening);
+    }
     setRekeningModalVisible(false);
+  };
+
+  // -> FUNGSI GANTI MODE
+  const handleToggleMode = modeIsBazaar => {
+    if (isBazaarMode === modeIsBazaar) return; // Jika mode sama, abaikan
+
+    if (items.length > 0) {
+      Alert.alert(
+        'Ganti Mode Transaksi?',
+        'Keranjang belanja saat ini akan dikosongkan. Lanjutkan?',
+        [
+          {text: 'Batal', style: 'cancel'},
+          {
+            text: 'Ya, Ganti',
+            onPress: () => {
+              setItems([]);
+              setDiskonFaktur(0);
+              setPromoApplied('');
+              setIsBazaarMode(modeIsBazaar);
+            },
+          },
+        ],
+      );
+    } else {
+      setIsBazaarMode(modeIsBazaar);
+    }
   };
 
   // --- LOGIKA CEK PROMO ---
   const checkPromoAndPay = () => {
-    if (items.length === 0)
+    if (items.length === 0) {
       return Toast.show({
         type: 'error',
         text1: 'Error',
         text2: 'Belum ada barang.',
       });
+    }
 
     let potentialDiscount = 0;
     let appliedPromoName = '';
 
-    // 1. Ambil Data Promo (Gunakan ID PRO-2026-001 sesuai versi web)
-    const promoFebruari = activePromos.find(
-      p => p.pro_nomor === 'PRO-2026-001',
-    );
+    // 1. Ambil Data Promo (Ganti ke PRO-2026-004)
+    const promoMei = activePromos.find(p => p.pro_nomor === 'PRO-2026-004');
 
     // 2. Hitung Total Belanja Barang yang Berhak (Eligible)
     const totalEligible = items.reduce((sum, item) => {
-      const isReguler = item.kategori === 'REGULER';
-      const isJersey = item.nama?.toUpperCase().includes('JERSEY');
-      const isDtf =
-        item.kategori === 'SO-DTF' ||
-        item.kategori === 'SABLON' ||
-        item.nama?.toUpperCase().includes('DTF');
+      // Pastikan data tidak undefined
+      const kategori = (item.kategori || '').toUpperCase();
+      const namaBarang = (item.nama || '').toUpperCase();
 
-      // Syarat: Reguler OR Jersey OR Sablon DTF
-      if (isReguler || isJersey || isDtf) {
+      // Aturan Pengecualian (Kecuali Bordir dan Custom Pengajuan)
+      const isBordir = kategori === 'SO-DTF' && namaBarang.includes('BR');
+      const isCustom = kategori.includes('PENGAJUAN');
+
+      // Jika bukan bordir dan bukan custom, maka barang ini berhak dapat promo
+      if (!isBordir && !isCustom) {
         return sum + item.jumlah * item.harga;
       }
       return sum;
     }, 0);
 
-    // 3. Logika Tiering Promo
-    if (totalEligible >= 200000) {
-      // TIER 1: Belanja >= 200rb (Berlaku Kelipatan 20rb)
-      const kelipatan = Math.floor(totalEligible / 200000);
-      potentialDiscount = 20000 * kelipatan;
-      appliedPromoName = 'PROMO KELIPATAN 20K';
-    } else if (totalEligible >= 150000) {
-      // TIER 2: Belanja 150rb - 199.999 (Potongan Flat 15rb)
-      potentialDiscount = 15000;
-      appliedPromoName = 'PROMO HEMAT 15K';
+    // 3. Logika Promo (Kelipatan 250rb disc 12.500)
+    // Jika tidak ada data promo aktif dari API, kita tetap bisa jalankan logika hardcode ini
+    // (Opsional: tambahkan `if (promoMei) { ... }` jika ingin strict harus ada di DB)
+    if (totalEligible >= 250000) {
+      const kelipatan = Math.floor(totalEligible / 250000);
+      potentialDiscount = 12500 * kelipatan;
+      appliedPromoName = 'PROMO MEI KELIPATAN 250K';
     }
 
     // --- KONFIRMASI KE USER ---
@@ -395,7 +461,7 @@ const PenjualanLangsungScreen = ({navigation}) => {
         ],
       );
     } else {
-      // Tidak mencapai syarat promo (di bawah 150rb)
+      // Tidak mencapai syarat promo (di bawah 250rb)
       setDiskonFaktur(0);
       setPromoApplied('');
       setShowPaymentModal(true);
@@ -412,7 +478,8 @@ const PenjualanLangsungScreen = ({navigation}) => {
       });
 
     const nilaiTransfer = parseInt(transfer) || 0;
-    const bayar = (parseInt(tunai) || 0) + nilaiTransfer;
+    const nilaiQris = parseInt(qris) || 0;
+    const bayar = (parseInt(tunai) || 0) + nilaiTransfer + nilaiQris;
 
     if (bayar < totals.grandTotal) {
       return Toast.show({
@@ -430,13 +497,24 @@ const PenjualanLangsungScreen = ({navigation}) => {
       });
     }
 
+    if (nilaiQris > 0 && !qrisAccount) {
+      return Toast.show({
+        type: 'error',
+        text1: 'Akun QRIS Kosong',
+        text2: 'Pilih Akun Rekening QRIS terlebih dahulu.',
+      });
+    }
+
     setIsSaving(true);
     try {
       const payload = {
         header: {
           tanggal: new Date().toISOString().split('T')[0],
           customer: customer,
-          keterangan: 'Penjualan Mobile',
+          keterangan: isBazaarMode
+            ? 'Penjualan Bazaar (K01)'
+            : 'Penjualan Mobile',
+          cabang_override: isBazaarMode ? 'K01' : null,
         },
         items: items,
         payment: {
@@ -448,6 +526,16 @@ const PenjualanLangsungScreen = ({navigation}) => {
                   kode: bankAccount.kode,
                   nama: bankAccount.nama,
                   rekening: bankAccount.rekening,
+                }
+              : null,
+          },
+          qris: {
+            nominal: nilaiQris,
+            akun: qrisAccount
+              ? {
+                  kode: qrisAccount.kode,
+                  nama: qrisAccount.nama,
+                  rekening: qrisAccount.rekening,
                 }
               : null,
           },
@@ -576,7 +664,9 @@ const PenjualanLangsungScreen = ({navigation}) => {
     const isStokLow = item.stok <= 5;
     const isStokMinus = item.jumlah > item.stok;
 
-    // WAJIB PAKAI 'return' KARENA ADA LOGIKA DI ATASNYA
+    // Hitung harga bersih (setelah diskon) untuk ditampilkan
+    const hargaSatuanNetto = item.harga - (item.diskonRp || 0);
+
     return (
       <View
         style={[
@@ -587,17 +677,38 @@ const PenjualanLangsungScreen = ({navigation}) => {
           <Text style={styles.itemName} numberOfLines={2}>
             {item.nama}
           </Text>
-          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+            }}>
             <Text style={styles.itemDetails}>
-              {item.ukuran} | @{item.harga.toLocaleString('id-ID')} |
+              {item.ukuran} | @{item.harga.toLocaleString('id-ID')}
             </Text>
+
+            {/* --- INDIKATOR DISKON 15% --- */}
+            {item.diskonRp > 0 && (
+              <View
+                style={{
+                  backgroundColor: '#FFEBEE',
+                  paddingHorizontal: 4,
+                  borderRadius: 4,
+                  marginHorizontal: 4,
+                }}>
+                <Text
+                  style={{fontSize: 10, color: '#D32F2F', fontWeight: 'bold'}}>
+                  -15%
+                </Text>
+              </View>
+            )}
+
+            <Text style={styles.itemDetails}> | </Text>
 
             {/* Indikator Stok Berwarna */}
             <Text
               style={[
                 styles.itemDetails,
-                {marginLeft: 4},
-                // Jika Minus: Merah Gelap, Jika Low: Merah, Jika Aman: Hijau
                 isStokMinus
                   ? {color: '#B71C1C', fontWeight: 'bold'}
                   : isStokLow
@@ -610,10 +721,13 @@ const PenjualanLangsungScreen = ({navigation}) => {
             </Text>
           </View>
         </View>
+
         <View style={styles.itemRight}>
+          {/* Tampilkan total harga per baris (Netto x Jumlah) */}
           <Text style={styles.totalItem}>
-            Rp {(item.harga * item.jumlah).toLocaleString('id-ID')}
+            Rp {(hargaSatuanNetto * item.jumlah).toLocaleString('id-ID')}
           </Text>
+
           <View style={styles.qtyControl}>
             <TouchableOpacity
               onPress={() => handleQtyChange(index, -1)}
@@ -652,6 +766,33 @@ const PenjualanLangsungScreen = ({navigation}) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* --- UI BARU: TAB TOGGLE MODE TRANSAKSI --- */}
+      <View style={styles.modeContainer}>
+        <TouchableOpacity
+          style={[styles.modeBtn, !isBazaarMode && styles.modeActiveReguler]}
+          onPress={() => handleToggleMode(false)}>
+          <Icon
+            name="store"
+            size={16}
+            color={!isBazaarMode ? '#fff' : '#666'}
+          />
+          <Text
+            style={[styles.modeText, !isBazaarMode && styles.modeTextActive]}>
+            Toko Reguler
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.modeBtn, isBazaarMode && styles.modeActiveBazaar]}
+          onPress={() => handleToggleMode(true)}>
+          <Icon name="tent" size={16} color={isBazaarMode ? '#fff' : '#666'} />
+          <Text
+            style={[styles.modeText, isBazaarMode && styles.modeTextActive]}>
+            Bazaar (K01)
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Modal Pencarian Rekening */}
       <SearchModal
         visible={isRekeningModalVisible}
@@ -806,7 +947,7 @@ const PenjualanLangsungScreen = ({navigation}) => {
               />
               <TouchableOpacity
                 style={styles.bankButton}
-                onPress={() => setRekeningModalVisible(true)}>
+                onPress={openTransferSearch}>
                 <Icon name="credit-card" size={20} color="#555" />
                 <Text style={styles.bankButtonText} numberOfLines={1}>
                   {bankAccount ? bankAccount.nama : 'Pilih Bank'}
@@ -816,6 +957,30 @@ const PenjualanLangsungScreen = ({navigation}) => {
             {bankAccount && (
               <Text style={styles.bankDetail}>{bankAccount.rekening}</Text>
             )}
+
+            {/* ---> TAMBAHKAN UI QRIS DI SINI <--- */}
+            <Text style={styles.inputLabel}>QRIS / E-Wallet (Opsional)</Text>
+            <View style={{flexDirection: 'row', gap: 10}}>
+              <TextInput
+                style={[styles.moneyInput, {flex: 1}]}
+                keyboardType="number-pad"
+                placeholder="0"
+                value={qris}
+                onChangeText={setQris}
+              />
+              <TouchableOpacity
+                style={styles.bankButton}
+                onPress={openQrisSearch}>
+                <Icon name="smartphone" size={20} color="#555" />
+                <Text style={styles.bankButtonText} numberOfLines={1}>
+                  {qrisAccount ? qrisAccount.nama : 'Pilih Akun QRIS'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {qrisAccount && (
+              <Text style={styles.bankDetail}>{qrisAccount.rekening}</Text>
+            )}
+            {/* ---> BATAS UI QRIS <--- */}
 
             <View style={styles.kembalianBox}>
               <Text style={styles.kembalianLabel}>Kembali:</Text>
@@ -1107,6 +1272,39 @@ const styles = StyleSheet.create({
     color: '#1976D2',
     fontWeight: 'bold',
     fontSize: 12,
+  },
+  modeContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#E0E0E0',
+    margin: 15,
+    marginBottom: 0,
+    borderRadius: 8,
+    padding: 3,
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 6,
+    gap: 8,
+  },
+  modeActiveReguler: {
+    backgroundColor: '#1976D2', // Biru untuk reguler
+    elevation: 2,
+  },
+  modeActiveBazaar: {
+    backgroundColor: '#E65100', // Oranye untuk Bazaar
+    elevation: 2,
+  },
+  modeText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#666',
+  },
+  modeTextActive: {
+    color: '#fff',
   },
 });
 

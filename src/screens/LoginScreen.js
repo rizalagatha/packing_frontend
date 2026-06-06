@@ -15,12 +15,17 @@ import {
   KeyboardAvoidingView, // <--- 1. Import ini
   Platform,
   ScrollView, // <--- 2. Import ini
+  Alert,
+  Modal,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
 import DeviceInfo from 'react-native-device-info';
 import {AuthContext} from '../context/AuthContext';
+import axios from 'axios';
+import RNFS from 'react-native-fs';
+import FileViewer from 'react-native-file-viewer';
 
 const {width, height} = Dimensions.get('window');
 
@@ -74,6 +79,10 @@ const LoginScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
+  const [isUpdateModalVisible, setIsUpdateModalVisible] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState(0);
+  const [updateMessage, setUpdateMessage] = useState('Menyiapkan unduhan...');
+
   // State untuk Error Highlight (Border Merah)
   const [errorField, setErrorField] = useState(''); // 'user', 'pass', atau ''
 
@@ -96,6 +105,99 @@ const LoginScreen = () => {
       }),
     ]).start();
   }, [fadeAnim, slideAnim]);
+
+  // 1. FUNGSI DOWNLOAD & INSTALL (ANTI PARSE ERROR & PAKE PROGRESS BAR)
+  const downloadAndInstallApk = async apkUrl => {
+    // Tampilkan Modal Progress
+    setIsUpdateModalVisible(true);
+    setUpdateProgress(0);
+    setUpdateMessage('Mengunduh pembaruan...');
+
+    // FIX PARSE ERROR 1: Gunakan DocumentDirectory (Lebih aman dari Cache)
+    // FIX PARSE ERROR 2: Gunakan Date.now() agar nama file selalu baru dan tidak numpuk
+    const localFile = `${
+      RNFS.DocumentDirectoryPath
+    }/kaosan-update-${Date.now()}.apk`;
+
+    const options = {
+      fromUrl: apkUrl,
+      toFile: localFile,
+      background: true,
+      progressDivider: 2, // Biar HP gak ngelag, update UI setiap kelipatan 2%
+      begin: res => {
+        console.log('Mulai download:', res.contentLength);
+      },
+      progress: res => {
+        const progress = (res.bytesWritten / res.contentLength) * 100;
+        setUpdateProgress(progress);
+      },
+    };
+
+    try {
+      // Mulai proses download
+      const ret = RNFS.downloadFile(options);
+
+      // FIX PARSE ERROR 3: WAJIB ditunggu sampai benar-benar 100%
+      await ret.promise;
+
+      setUpdateMessage('Menyiapkan instalasi...');
+      setUpdateProgress(100);
+
+      // FIX PARSE ERROR 4: Beri jeda 1 detik agar Android selesai merakit file di harddisk
+      setTimeout(() => {
+        if (Platform.OS === 'android') {
+          FileViewer.open(localFile, {
+            showOpenWithDialog: false,
+            mimeType: 'application/vnd.android.package-archive',
+          })
+            .then(() => {
+              console.log('Layar instalasi berhasil terbuka');
+              setUpdateMessage('Silakan selesaikan instalasi.');
+            })
+            .catch(err => {
+              console.log('Gagal buka file instalasi:', err);
+              setIsUpdateModalVisible(false);
+              Alert.alert(
+                'Error',
+                'Gagal memicu proses instalasi Android. Pastikan izin penyimpanan aktif.',
+              );
+            });
+        }
+      }, 1000);
+    } catch (err) {
+      console.log('Download error:', err);
+      setIsUpdateModalVisible(false);
+      Alert.alert(
+        'Gagal',
+        'Terjadi kesalahan saat mengunduh update dari server.',
+      );
+    }
+  };
+
+  useEffect(() => {
+    const checkUpdate = async () => {
+      try {
+        const response = await axios.get(
+          'http://103.94.238.252:3000/api/app/version',
+        );
+        const serverData = response.data.data;
+        const currentVersionCode = parseInt(DeviceInfo.getBuildNumber(), 10); // Sesuaikan dengan version code di build.gradle
+
+        if (serverData.versionCode > currentVersionCode) {
+          Alert.alert('Update Tersedia!', serverData.releaseNotes, [
+            {text: 'Nanti', style: 'cancel'},
+            {
+              text: 'Update',
+              onPress: () => downloadAndInstallApk(serverData.apkUrl),
+            },
+          ]);
+        }
+      } catch (e) {
+        console.log('Cek update gagal/offline');
+      }
+    };
+    checkUpdate();
+  }, []);
 
   const handleLogin = async () => {
     Keyboard.dismiss();
@@ -147,6 +249,44 @@ const LoginScreen = () => {
         backgroundColor="transparent"
         barStyle="light-content"
       />
+
+      {/* --- MODAL PROGRESS UPDATE BARU --- */}
+      <Modal
+        visible={isUpdateModalVisible}
+        transparent={true}
+        animationType="fade">
+        <View style={styles.modalOverlayUpdate}>
+          <View style={styles.modalContentUpdate}>
+            <View style={styles.iconUpdateBg}>
+              <Icon name="download-cloud" size={36} color="#fff" />
+            </View>
+            <Text style={styles.updateTitle}>Memperbarui Aplikasi</Text>
+            <Text style={styles.updateDesc}>{updateMessage}</Text>
+
+            {/* Progress Bar Container */}
+            <View style={styles.progressBarBg}>
+              <View
+                style={[styles.progressBarFill, {width: `${updateProgress}%`}]}
+              />
+            </View>
+
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                width: '100%',
+                marginTop: 5,
+              }}>
+              <Text style={styles.progressTextL}>
+                {Math.round(updateProgress)}%
+              </Text>
+              <Text style={styles.progressTextR}>
+                Mohon jangan tutup aplikasi
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* 2. Keyboard Avoiding View (Agar form tidak tertutup keyboard) */}
       <KeyboardAvoidingView
@@ -381,6 +521,71 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     letterSpacing: 1,
+  },
+
+  // --- STYLE UNTUK MODAL UPDATE ---
+  modalOverlayUpdate: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContentUpdate: {
+    backgroundColor: '#fff',
+    width: '100%',
+    padding: 24,
+    borderRadius: 20,
+    alignItems: 'center',
+    elevation: 10,
+  },
+  iconUpdateBg: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#1976D2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    elevation: 5,
+    shadowColor: '#1976D2',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+  },
+  updateTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  updateDesc: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  progressBarBg: {
+    width: '100%',
+    height: 12,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#4CAF50', // Hijau saat jalan
+    borderRadius: 6,
+  },
+  progressTextL: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#1976D2',
+  },
+  progressTextR: {
+    fontSize: 11,
+    color: '#999',
+    fontStyle: 'italic',
   },
 });
 

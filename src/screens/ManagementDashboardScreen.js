@@ -473,9 +473,14 @@ const ManagementDashboardScreen = ({navigation}) => {
     const isEstuManagerPeriod = today >= startTransfer && today < endTransfer;
 
     // 1. Sidebar Access: Haris, Darul, Estu, Rio tetap bisa buka menu sidebar
-    const sidebarAccess = ['HARIS', 'DARUL', 'ESTU', 'RIO', 'SETYO'].some(
-      allowed => name.includes(allowed),
-    );
+    const sidebarAccess = [
+      'HARIS',
+      'DARUL',
+      'ESTU',
+      'RIO',
+      'SETYO',
+      'ADMIN',
+    ].some(allowed => name.includes(allowed));
 
     // 2. Authorization Logic:
     let authAccess = false;
@@ -2048,7 +2053,13 @@ const ManagementDashboardScreen = ({navigation}) => {
                 </View>
                 <View>
                   <Text style={styles.drawerName}>{userInfo.nama}</Text>
-                  <Text style={styles.drawerRole}>Manager</Text>
+                  <Text style={styles.drawerRole}>
+                    {userInfo?.nama?.toUpperCase().includes('RIO')
+                      ? 'Audit'
+                      : userInfo?.nama?.toUpperCase().includes('ESTU')
+                      ? 'Supervisor'
+                      : 'Manager'}
+                  </Text>
                 </View>
               </View>
 
@@ -2091,6 +2102,25 @@ const ManagementDashboardScreen = ({navigation}) => {
                   />
                   <Text style={styles.drawerItemText}>Laporan Stok Kosong</Text>
                 </TouchableOpacity>
+
+                {/* --- MENU STOK OPNAME (KHUSUS RIO) --- */}
+                {(userInfo?.kode === 'RIO' ||
+                  userInfo?.nama?.toUpperCase().includes('RIO')) && (
+                  <TouchableOpacity
+                    style={styles.drawerItem}
+                    onPress={() => {
+                      closeDrawer();
+                      navigation.navigate('StokOpname');
+                    }}>
+                    <Icon
+                      name="clipboard"
+                      size={20}
+                      color="#546E7A"
+                      style={{marginRight: 15}}
+                    />
+                    <Text style={styles.drawerItemText}>Stok Opname</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
 

@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useContext, useRef} from 'react';
+import React, {useState, useContext, useRef} from 'react';
 import {
   View,
   Text,
@@ -24,7 +24,7 @@ import SoundPlayer from 'react-native-sound-player';
 const AmbilBarangScreen = ({navigation}) => {
   const {userToken, userInfo} = useContext(AuthContext);
   const [items, setItems] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [setIsLoading] = useState(false);
   const [isAuthPending, setIsAuthPending] = useState(false); // State untuk overlay progress
   const [scannedBarcode, setScannedBarcode] = useState('');
   const barcodeInputRef = useRef(null);
@@ -47,7 +47,9 @@ const AmbilBarangScreen = ({navigation}) => {
 
   // 1. Urutan Scan: Last Scanned First
   const handleBarcodeSubmit = async () => {
-    if (!scannedBarcode) return;
+    if (!scannedBarcode) {
+      return;
+    }
     try {
       const res = await getProductByBarcodeAmbilApi(
         scannedBarcode,
@@ -94,18 +96,27 @@ const AmbilBarangScreen = ({navigation}) => {
   };
 
   const handleSave = () => {
-    if (items.length === 0)
-      return Toast.show({type: 'error', text1: 'Daftar item kosong'});
-    if (!header.peminta)
-      return Toast.show({type: 'error', text1: 'Nama peminta wajib diisi'});
+    if (items.length === 0) {
+      return Toast.show({
+        type: 'error',
+        text1: 'Daftar item kosong',
+      });
+    }
+    if (!header.peminta) {
+      return Toast.show({
+        type: 'error',
+        text1: 'Nama peminta wajib diisi',
+      });
+    }
 
     // Cek apakah ada jumlah yang melebihi stok sebelum minta izin
     const hasOverStock = items.some(i => i.jumlah > i.stok);
-    if (hasOverStock)
+    if (hasOverStock) {
       return Alert.alert(
         'Peringatan',
         'Ada item yang jumlahnya melebihi stok KDC!',
       );
+    }
 
     const totalQty = items.reduce((sum, i) => sum + i.jumlah, 0);
     const infoText = `Ambil Barang\nPeminta: ${header.peminta}\nTotal: ${totalQty} Pcs`;
@@ -153,7 +164,7 @@ const AmbilBarangScreen = ({navigation}) => {
 
     return (
       <View style={[styles.itemCard, isOverStock && styles.cardError]}>
-        <View style={{flex: 1}}>
+        <View style={styles.flex1}>
           <Text style={styles.itemName}>{item.nama}</Text>
           <Text style={styles.itemSub}>
             {item.kode} | Size: {item.ukuran}
@@ -161,7 +172,7 @@ const AmbilBarangScreen = ({navigation}) => {
           <Text
             style={[
               styles.stockIndicator,
-              isOverStock && {color: '#D32F2F', fontWeight: 'bold'},
+              isOverStock && styles.stockIndicatorError,
             ]}>
             Stok KDC: {item.stok} {isOverStock ? '(Tidak Cukup)' : ''}
           </Text>
@@ -180,8 +191,8 @@ const AmbilBarangScreen = ({navigation}) => {
           </View>
 
           <TouchableOpacity
-            onPress={() => setItems(items.filter(i => i.id !== item.id))}
-            style={{marginLeft: 15}}>
+            onPress={() => setItems(prev => prev.filter(i => i.id !== item.id))}
+            style={styles.trashButton}>
             <Icon name="trash-2" size={20} color="#666" />
           </TouchableOpacity>
         </View>
@@ -215,7 +226,12 @@ const AmbilBarangScreen = ({navigation}) => {
           style={styles.input}
           placeholder="Ketik nama karyawan..."
           value={header.peminta}
-          onChangeText={val => setHeader({...header, peminta: val})}
+          onChangeText={val =>
+            setHeader(prev => ({
+              ...prev,
+              peminta: val,
+            }))
+          }
         />
         <View style={styles.scannerBox}>
           <Icon name="maximize" size={20} color="#1565C0" />
@@ -236,7 +252,7 @@ const AmbilBarangScreen = ({navigation}) => {
         data={items}
         renderItem={renderItem}
         keyExtractor={item => item.id.toString()}
-        contentContainerStyle={{padding: 15}}
+        contentContainerStyle={styles.listContent}
       />
 
       <View style={styles.footer}>
@@ -368,6 +384,20 @@ const styles = StyleSheet.create({
   },
   cancelAuthBtn: {marginTop: 20, padding: 10},
   cancelAuthText: {color: '#D32F2F', fontWeight: 'bold', fontSize: 12},
+
+  flex1: {
+    flex: 1,
+  },
+  stockIndicatorError: {
+    color: '#D32F2F',
+    fontWeight: 'bold',
+  },
+  trashButton: {
+    marginLeft: 15,
+  },
+  listContent: {
+    padding: 15,
+  },
 });
 
 export default AmbilBarangScreen;

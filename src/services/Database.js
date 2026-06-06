@@ -61,6 +61,17 @@ export const initDB = async () => {
       // Abaikan jika kolom sudah ada
     }
 
+    try {
+      await db.executeSql(
+        'ALTER TABLE hasil_opname ADD COLUMN no_pl TEXT DEFAULT ""',
+      );
+    } catch (e) {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE hasil_opname ADD COLUMN no_pack TEXT DEFAULT ""',
+      );
+    } catch (e) {}
+
     // 3. Tabel Riwayat Upload (Log Lengkap)
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS upload_log (
@@ -812,7 +823,6 @@ export const getHargaEcerAsli = item => {
 };
 
 // --- FUNGSI MASTER LOKASI [BARU] ---
-
 /**
  * Menyimpan daftar lokasi hasil download dari server
  */
@@ -881,7 +891,9 @@ export const insertMasterBarang = async (items, onProgress) => {
       db.transaction(
         tx => {
           chunk.forEach(item => {
-            const b_barcode = item.barcode ? String(item.barcode).trim() : '';
+            const b_barcode = item.barcode
+              ? String(item.barcode).trim().toUpperCase()
+              : '';
             if (b_barcode) {
               tx.executeSql(
                 'INSERT OR REPLACE INTO barang (barcode, kode, nama, ukuran, lokasi, stok_sistem) VALUES (?, ?, ?, ?, ?, ?)',
@@ -913,7 +925,8 @@ export const insertMasterBarang = async (items, onProgress) => {
 
 export const getBarangByBarcode = async barcode => {
   if (!db) await initDB();
-  const clean = String(barcode).trim();
+  // PERBAIKAN: Bersihkan barcode yang di-scan dan ubah ke UPPERCASE
+  const clean = String(barcode).trim().toUpperCase();
   const [results] = await db.executeSql(
     'SELECT * FROM barang WHERE barcode = ?',
     [clean],
@@ -927,25 +940,26 @@ export const incrementOpnameQty = async (barcode, lokasi, cabang) => {
   const tgl = new Date().toISOString();
 
   // CLEANUP: Hapus nol di depan dan spasi
-  const cleanBarcode = String(barcode).trim().replace(/^0+/, '');
+  const cleanBarcode = String(barcode).trim();
   const cleanLokasi = String(lokasi).trim().toUpperCase();
   const cleanCabang = String(cabang).trim().toUpperCase();
 
   // Filter SELECT menyertakan cabang agar tidak mengambil data cabang lain
   const [check] = await db.executeSql(
-    'SELECT qty_fisik, is_uploaded FROM hasil_opname WHERE barcode = ? AND lokasi = ? AND cabang = ?',
+    'SELECT qty_fisik, is_uploaded FROM hasil_opname WHERE barcode = ? AND lokasi = ? AND cabang = ? AND is_uploaded = 0',
     [cleanBarcode, cleanLokasi, cleanCabang],
   );
 
   if (check.rows.length > 0) {
     const item = check.rows.item(0);
-    const newQty = item.is_uploaded === 1 ? 1 : item.qty_fisik + 1;
+    const newQty = item.qty_fisik + 1;
 
     await db.executeSql(
-      'UPDATE hasil_opname SET qty_fisik = ?, tgl_scan = ?, is_uploaded = 0 WHERE barcode = ? AND lokasi = ? AND cabang = ?',
+      'UPDATE hasil_opname SET qty_fisik = ?, tgl_scan = ? WHERE barcode = ? AND lokasi = ? AND cabang = ? AND is_uploaded = 0',
       [newQty, tgl, cleanBarcode, cleanLokasi, cleanCabang],
     );
   } else {
+    // Kalau belum ada, insert baru
     await db.executeSql(
       'INSERT INTO hasil_opname (barcode, qty_fisik, lokasi, cabang, tgl_scan, is_uploaded) VALUES (?, ?, ?, ?, ?, 0)',
       [cleanBarcode, 1, cleanLokasi, cleanCabang, tgl],
@@ -953,19 +967,19 @@ export const incrementOpnameQty = async (barcode, lokasi, cabang) => {
   }
 };
 
-// [BARU] Fungsi ambil hanya yang belum upload
+// Update getPendingOpname agar kolom ini ikut terkirim ke Backend
 export const getPendingOpname = async cabang => {
   if (!db) await initDB();
   const [results] = await db.executeSql(
     `
       SELECT 
-        h.barcode, h.lokasi, h.cabang,
+        h.barcode, h.lokasi, h.cabang, h.no_pl, h.no_pack,
         SUM(h.qty_fisik) as qty_fisik, 
         b.kode, b.nama, b.ukuran 
       FROM hasil_opname h
       LEFT JOIN barang b ON h.barcode = b.barcode
-      WHERE h.is_uploaded = 0 AND h.cabang = ? -- [TAMBAHKAN INI]
-      GROUP BY h.barcode, h.lokasi, h.cabang
+      WHERE h.is_uploaded = 0 AND h.cabang = ?
+      GROUP BY h.barcode, h.lokasi, h.cabang, h.no_pl, h.no_pack
   `,
     [cabang],
   );
@@ -1060,7 +1074,7 @@ export const decrementOpnameQty = async (barcode, lokasi, cabang) => {
   const tgl = new Date().toISOString();
 
   // [FIX] Samakan cara bersih-bersih barcode dengan fungsi increment
-  const cleanBarcode = String(barcode).trim().replace(/^0+/, '');
+  const cleanBarcode = String(barcode).trim();
   const cleanLokasi = String(lokasi).trim().toUpperCase();
   const cleanCabang = String(cabang).trim().toUpperCase();
 
@@ -1147,4 +1161,146 @@ export const cleanOldBarcodes = async () => {
   } catch (e) {
     console.log('❌ Gagal membersihkan barcode:', e.message);
   }
+};
+
+export const insertPackingToOpname = async (
+  packingItems,
+  lokasi,
+  cabang,
+  noPl = '',
+  noPack = '',
+) => {
+  if (!db) await initDB();
+  const tgl = new Date().toISOString();
+  const cleanLokasi = String(lokasi).trim().toUpperCase();
+  const cleanCabang = String(cabang).trim().toUpperCase();
+
+  await db.transaction(async tx => {
+    for (const item of packingItems) {
+      const cleanBarcode = String(
+        item.packd_barcode || item.barcode || item.Kode,
+      ).trim();
+
+      const qty =
+        parseFloat(item.packd_qty || item.qty || item.jumlah || item.Jumlah) ||
+        0;
+
+      const [check] = await db.executeSql(
+        `SELECT qty_fisik
+     FROM hasil_opname
+     WHERE barcode = ?
+       AND lokasi = ?
+       AND cabang = ?
+       AND is_uploaded = 0`,
+        [cleanBarcode, cleanLokasi, cleanCabang],
+      );
+
+      if (check.rows.length > 0) {
+        const currentQty = check.rows.item(0).qty_fisik;
+
+        await db.executeSql(
+          `UPDATE hasil_opname
+       SET qty_fisik = ?, tgl_scan = ?
+       WHERE barcode = ?
+         AND lokasi = ?
+         AND cabang = ?
+         AND is_uploaded = 0`,
+          [currentQty + qty, tgl, cleanBarcode, cleanLokasi, cleanCabang],
+        );
+      } else {
+        await db.executeSql(
+          `INSERT INTO hasil_opname
+       (barcode, qty_fisik, lokasi, cabang, tgl_scan, is_uploaded, no_pl, no_pack)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
+          [cleanBarcode, qty, cleanLokasi, cleanCabang, tgl, noPl, noPack],
+        );
+      }
+    }
+  });
+};
+
+// Cek apakah karung/PL sudah pernah discan di rak ini dan belum diupload
+export const checkBulkExists = async (
+  nomorBulk,
+  lokasi,
+  cabang,
+  isPl = false,
+) => {
+  if (!db) await initDB();
+  const column = isPl ? 'no_pl' : 'no_pack';
+  const [res] = await db.executeSql(
+    `SELECT COUNT(*) as count FROM hasil_opname WHERE ${column} = ? AND lokasi = ? AND cabang = ? AND is_uploaded = 0`,
+    [nomorBulk, lokasi, cabang],
+  );
+  return res.rows.item(0).count > 0;
+};
+
+// Hapus semua isi karung/PL dari rak tersebut
+export const deleteBulkOpname = async (
+  nomorBulk,
+  lokasi,
+  cabang,
+  isPl = false,
+) => {
+  if (!db) await initDB();
+  const column = isPl ? 'no_pl' : 'no_pack';
+  await db.executeSql(
+    `DELETE FROM hasil_opname WHERE ${column} = ? AND lokasi = ? AND cabang = ? AND is_uploaded = 0`,
+    [nomorBulk, lokasi, cabang],
+  );
+};
+
+// Fungsi khusus untuk update Qty Opname secara manual (KDC)
+export const updateOpnameQtyManual = async (
+  barcode,
+  lokasi,
+  cabang,
+  newQty,
+) => {
+  if (!db) await initDB();
+  const tgl = new Date().toISOString();
+  await db.executeSql(
+    'UPDATE hasil_opname SET qty_fisik = ?, tgl_scan = ? WHERE barcode = ? AND lokasi = ? AND cabang = ? AND is_uploaded = 0',
+    [newQty, tgl, barcode, lokasi, cabang],
+  );
+};
+
+export const getBulkSummary = async (lokasi, cabang) => {
+  if (!db) await initDB();
+
+  const cleanLokasi = String(lokasi).trim().toUpperCase();
+  const cleanCabang = String(cabang).trim().toUpperCase();
+
+  const [packRes] = await db.executeSql(
+    `
+      SELECT COUNT(DISTINCT no_pack) as total
+      FROM hasil_opname
+      WHERE lokasi = ?
+        AND cabang = ?
+        AND is_uploaded = 0
+        AND no_pack IS NOT NULL
+        AND no_pack <> ''
+    `,
+    [cleanLokasi, cleanCabang],
+  );
+
+  const [plRes] = await db.executeSql(
+    `
+      SELECT COUNT(DISTINCT no_pl) as total
+      FROM hasil_opname
+      WHERE lokasi = ?
+        AND cabang = ?
+        AND is_uploaded = 0
+        AND no_pl IS NOT NULL
+        AND no_pl <> ''
+    `,
+    [cleanLokasi, cleanCabang],
+  );
+
+  return {
+    totalPack: packRes.rows.item(0).total || 0,
+    totalPl: plRes.rows.item(0).total || 0,
+    totalBulk:
+      (packRes.rows.item(0).total || 0) + (plRes.rows.item(0).total || 0),
+  };
 };

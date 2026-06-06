@@ -15,30 +15,35 @@ const BazarCustomerListScreen = ({navigation}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState([]);
 
-  // 1. Bungkus dengan useCallback agar identitas fungsi stabil
-  const fetchCustomers = useCallback(async () => {
-    const data = await DB.searchBazarCustomers(searchQuery);
-    setCustomers(data);
-  }, [searchQuery]); // Hanya berubah kalau searchQuery berubah
-
   // 2. Gunakan useEffect dengan dependency yang lengkap
   useEffect(() => {
-    // Tambahkan delay 300ms (debounce) agar tidak boros query saat ngetik
-    const timer = setTimeout(() => {
-      fetchCustomers();
+    let isActive = true;
+
+    const timer = setTimeout(async () => {
+      const data = await DB.searchBazarCustomers(searchQuery);
+
+      if (isActive) {
+        setCustomers(data);
+      }
     }, 300);
 
-    return () => clearTimeout(timer);
-  }, [fetchCustomers]); // Sekarang fetchCustomers aman jadi dependency
+    return () => {
+      isActive = false;
+      clearTimeout(timer);
+    };
+  }, [searchQuery]);
 
-  const handleSelect = item => {
-    navigation.navigate('BazarCashier', {
-      selectedCustomer: {
-        kode: item.cus_kode,
-        nama: item.cus_nama,
-      },
-    });
-  };
+  const handleSelect = useCallback(
+    item => {
+      navigation.navigate('BazarCashier', {
+        selectedCustomer: {
+          kode: item.cus_kode,
+          nama: item.cus_nama,
+        },
+      });
+    },
+    [navigation],
+  );
 
   const renderItem = ({item}) => (
     <TouchableOpacity style={styles.card} onPress={() => handleSelect(item)}>
@@ -84,7 +89,7 @@ const BazarCustomerListScreen = ({navigation}) => {
         data={customers}
         keyExtractor={item => item.cus_kode}
         renderItem={renderItem}
-        contentContainerStyle={{padding: 15}}
+        contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Icon name="users" size={50} color="#DDD" />
@@ -137,6 +142,9 @@ const styles = StyleSheet.create({
   addressText: {fontSize: 12, color: '#666', marginLeft: 5, flex: 1},
   emptyState: {alignItems: 'center', marginTop: 100},
   emptyLabel: {marginTop: 10, color: '#999'},
+  listContent: {
+    padding: 15,
+  },
 });
 
 export default BazarCustomerListScreen;

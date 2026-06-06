@@ -16,7 +16,6 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Alert,
-  Keyboard,
   Vibration,
   Modal,
   LayoutAnimation,
@@ -26,11 +25,12 @@ import {
 } from 'react-native';
 import {AuthContext} from '../context/AuthContext';
 import {
-  apiClient,
   getCabangListApi,
   downloadMasterDataApi,
   downloadMasterLokasiApi,
   uploadOpnameResultApi,
+  getPackingDetailApi,
+  getPackingListDetailApi,
 } from '../api/ApiService';
 import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
@@ -92,14 +92,41 @@ const StokOpnameScreen = ({navigation}) => {
   const [syncStage, setSyncStage] = useState(''); // 'downloading', 'saving_items', 'saving_loc'
   const [syncProgress, setSyncProgress] = useState(0);
 
+  const [bulkSummary, setBulkSummary] = useState({
+    totalPack: 0,
+    totalPl: 0,
+    totalBulk: 0,
+  });
+
   const lokasiInputRef = useRef(null);
   const scanInputRef = useRef(null);
+
+  const refreshList = useCallback(async () => {
+    try {
+      const data = await DB.getHasilOpname(targetCabang.kode);
+
+      setListOpname(Array.isArray(data) ? data : []);
+
+      if (lokasi) {
+        const bulk = await DB.getBulkSummary(lokasi, targetCabang.kode);
+        setBulkSummary(bulk);
+      }
+    } catch (e) {
+      setListOpname([]);
+    }
+  }, [targetCabang.kode, lokasi]);
+
+  useEffect(() => {
+    refreshBulkSummary();
+  }, [refreshBulkSummary]);
 
   // Init DB saat buka layar
   useEffect(() => {
     const init = async () => {
       await DB.initDB();
-      refreshList();
+      await refreshList();
+      const deviceId = await DeviceInfo.getUniqueId();
+      setDeviceSuffix(deviceId.substring(0, 5).toLowerCase());
     };
     init();
   }, [refreshList]);
@@ -130,7 +157,7 @@ const StokOpnameScreen = ({navigation}) => {
   useEffect(() => {
     const init = async () => {
       await DB.initDB();
-      refreshList(); // Memanggil fungsi yang sudah di-memoize
+      await refreshList(); // Memanggil fungsi yang sudah di-memoize
 
       // Ambil 5 digit ID unik
       const deviceId = await DeviceInfo.getUniqueId();
@@ -161,29 +188,32 @@ const StokOpnameScreen = ({navigation}) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
   };
 
-  const refreshList = useCallback(async () => {
-    try {
-      // Fungsi ini sekarang bergantung pada targetCabang.kode
-      const data = await DB.getHasilOpname(targetCabang.kode);
-      setListOpname(Array.isArray(data) ? data : []);
-    } catch (e) {
-      setListOpname([]);
-    }
-  }, [targetCabang.kode]);
-
   // --- LOGIC 1: DASHBOARD RINGKASAN ---
+  const refreshBulkSummary = useCallback(async () => {
+    if (!lokasi) {
+      setBulkSummary({
+        totalPack: 0,
+        totalPl: 0,
+        totalBulk: 0,
+      });
+      return;
+    }
+
+    const data = await DB.getBulkSummary(lokasi, targetCabang.kode);
+
+    setBulkSummary(data);
+  }, [lokasi, targetCabang.kode]);
+
   const summary = useMemo(() => {
     const currentList = listOpname || [];
     const activeLokasi = lokasi.trim().toLowerCase();
 
     let targetList = [];
     if (viewMode === 'ALL') {
-      // Total hanya untuk rak yang sedang diinput
       targetList = currentList.filter(
         item => item.lokasi && item.lokasi.toLowerCase() === activeLokasi,
       );
     } else {
-      // Total untuk semua yang belum diupload di device ini
       targetList = currentList.filter(item => item.is_uploaded === 0);
     }
 
@@ -193,8 +223,9 @@ const StokOpnameScreen = ({navigation}) => {
         (sum, item) => sum + (item.qty_fisik || 0),
         0,
       ),
+      totalBulk: bulkSummary.totalBulk,
     };
-  }, [listOpname, lokasi, viewMode]);
+  }, [listOpname, lokasi, viewMode, bulkSummary]);
 
   // --- LOGIC 2: FILTER LIST (Safe Array) ---
   const filteredList = useMemo(() => {
@@ -329,7 +360,7 @@ const StokOpnameScreen = ({navigation}) => {
               text1: 'Selesai',
               text2: 'Data Master Opname Berhasil Diperbarui',
             });
-            refreshList();
+            await refreshList();
           } catch (error) {
             console.error(error);
             Alert.alert('Gagal', 'Gagal sinkronisasi data dari server.');
@@ -346,7 +377,7 @@ const StokOpnameScreen = ({navigation}) => {
   // --- LOGIKA SCAN (SCAN & COUNT + SOUND) ---
   const handleScan = async () => {
     if (!scannedBarcode) return;
-    const cleanBarcode = scannedBarcode.trim().replace(/^0+/, '');
+    const cleanBarcode = scannedBarcode.trim();
 
     const scannedData = cleanBarcode.toUpperCase();
 
@@ -394,6 +425,153 @@ const StokOpnameScreen = ({navigation}) => {
       return;
     }
 
+    // --- LOGIKA BARU: DETEKSI SCAN KARUNG / PACKING ---
+    if (scannedData.startsWith('PACK')) {
+      try {
+        setIsLoading(true);
+
+        // 1. Cek apakah karung ini sudah discan di rak yang sama
+        const isExists = await DB.checkBulkExists(
+          scannedData,
+          lokasi,
+          targetCabang.kode,
+          false,
+        );
+
+        if (isExists) {
+          // Langsung proses, tidak perlu tanya hapus/tidak
+          console.log('Karung sudah ada, lanjut update qty...');
+        }
+
+        // 2. Jika belum ada, panggil API seperti biasa
+        const res = await getPackingDetailApi(scannedData, userToken);
+
+        if (res.data?.success && res.data?.data?.items?.length > 0) {
+          const items = res.data.data.items;
+
+          // Bulk insert ke SQLite hasil opname
+          await DB.insertPackingToOpname(
+            items,
+            lokasi,
+            targetCabang.kode,
+            '',
+            scannedData,
+          );
+
+          playSound('success');
+          Vibration.vibrate(100);
+          Toast.show({
+            type: 'success',
+            text1: 'Packing Berhasil Dimuat',
+            text2: `${items.length} macam barang dari ${scannedData} ditambahkan.`,
+          });
+
+          setLastScanned({
+            nama: `PACKING: ${scannedData}`,
+            barcode: `${items.length} Items`,
+            status: 'BERHASIL',
+          });
+
+          await new Promise(resolve => setTimeout(resolve, 100));
+
+          await refreshList();
+        } else {
+          playSound('error');
+          Alert.alert(
+            'Gagal',
+            `Data packing ${scannedData} tidak ditemukan atau kosong.`,
+          );
+        }
+      } catch (error) {
+        playSound('error');
+        console.log(error);
+        Alert.alert(
+          'Error',
+          'Gagal mengambil data packing dari server. Pastikan koneksi internet aktif.',
+        );
+      } finally {
+        setIsLoading(false);
+        setScannedBarcode('');
+        setTimeout(() => scanInputRef.current?.focus(), 100);
+      }
+      return;
+    }
+    // --- AKHIR LOGIKA BARU ---
+
+    // --- LOGIKA BARU: DETEKSI SCAN PACKING LIST DC ---
+    else if (scannedData.includes('.PL.')) {
+      // Menangkap format seperti KDC.PL.2512.0001
+      try {
+        setIsLoading(true);
+
+        // 1. Cek apakah Packing List ini sudah discan di rak yang sama
+        // Parameter ke-4 adalah true (isPl = true)
+        const isExists = await DB.checkBulkExists(
+          scannedData,
+          lokasi,
+          targetCabang.kode,
+          true,
+        );
+
+        if (isExists) {
+          // Langsung proses, tidak perlu tanya hapus/tidak
+          console.log('Karung sudah ada, lanjut update qty...');
+        }
+
+        // 2. Jika belum ada, Panggil API Detail form Packing List
+        const res = await getPackingListDetailApi(scannedData, userToken);
+
+        // Berdasarkan controller, response-nya: { header: {...}, items: [...] }
+        const items = res.data?.items;
+
+        if (items && items.length > 0) {
+          // Bulk insert ke SQLite
+          await DB.insertPackingToOpname(
+            items,
+            lokasi,
+            targetCabang.kode,
+            scannedData, // no_pl
+            '', // no_pack
+          );
+
+          playSound('success');
+          Vibration.vibrate(100);
+          Toast.show({
+            type: 'success',
+            text1: 'Packing List Dimuat',
+            text2: `${items.length} macam barang dari ${scannedData} ditambahkan.`,
+          });
+
+          setLastScanned({
+            nama: `PACKING LIST: ${scannedData}`,
+            barcode: `${items.length} Items`,
+            status: 'BERHASIL',
+          });
+
+          await refreshList();
+        } else {
+          playSound('error');
+          Alert.alert(
+            'Gagal',
+            `Data Packing List ${scannedData} kosong atau tidak ditemukan.`,
+          );
+        }
+      } catch (error) {
+        playSound('error');
+        console.log(error);
+        const errorMsg =
+          error.response?.data?.message ||
+          'Gagal mengambil data Packing List dari server.';
+        Alert.alert('Error', errorMsg);
+      } finally {
+        setIsLoading(false);
+        setScannedBarcode('');
+        setTimeout(() => scanInputRef.current?.focus(), 100);
+      }
+      return;
+    }
+    // --- AKHIR LOGIKA PACKING LIST ---
+
     // Cek Master Barang
     const masterItem = await DB.getBarangByBarcode(
       cleanBarcode,
@@ -406,7 +584,7 @@ const StokOpnameScreen = ({navigation}) => {
         await DB.incrementOpnameQty(cleanBarcode, lokasi, targetCabang.kode);
 
         triggerAnimation(); // Animasi saat item muncul/pindah ke atas
-        refreshList();
+        await refreshList();
 
         Vibration.vibrate(100);
         playSound('success');
@@ -424,7 +602,7 @@ const StokOpnameScreen = ({navigation}) => {
           status: 'BERHASIL',
         });
 
-        refreshList();
+        await refreshList();
       } catch (err) {
         playSound('error');
         console.log(err);
@@ -542,7 +720,7 @@ const StokOpnameScreen = ({navigation}) => {
               // B. [PENTING] Tandai sudah terupload, JANGAN di-clear
               await DB.markAsUploaded(targetCabang.kode);
 
-              refreshList();
+              await refreshList();
               Toast.show({
                 type: 'success',
                 text1: 'Berhasil Upload',
@@ -572,7 +750,7 @@ const StokOpnameScreen = ({navigation}) => {
           onPress: async () => {
             try {
               await DB.clearOpname();
-              refreshList();
+              await refreshList();
               setLastScanned(null);
               setScannedBarcode('');
               Toast.show({type: 'success', text1: 'Data berhasil di-reset'});
@@ -594,7 +772,7 @@ const StokOpnameScreen = ({navigation}) => {
         style: 'destructive',
         onPress: async () => {
           await DB.deleteItemOpname(barcode, lokasi);
-          refreshList();
+          await refreshList();
           Toast.show({type: 'success', text1: 'Item dihapus'});
         },
       },
@@ -639,10 +817,25 @@ const StokOpnameScreen = ({navigation}) => {
 
   const renderItem = ({item}) => {
     const isUploaded = item.is_uploaded === 1;
-    const textColor = getRowTextColor(isUploaded);
+    const textColor = isUploaded ? '#999' : '#333';
 
     // Fungsi Konfirmasi Tambah
     const confirmIncrement = item => {
+      // --- [FITUR BARU] BYPASS KONFIRMASI UNTUK KDC ---
+      if (targetCabang.kode === 'KDC') {
+        (async () => {
+          await DB.incrementOpnameQty(
+            item.barcode,
+            item.lokasi,
+            targetCabang.kode,
+          );
+          triggerAnimation();
+          await refreshList();
+        })();
+        return; // Hentikan fungsi agar Alert tidak muncul
+      }
+
+      // Logika konfirmasi normal untuk toko
       Alert.alert('Konfirmasi', `Tambah stok ${item.nama}?`, [
         {text: 'Batal', style: 'cancel'},
         {
@@ -654,7 +847,7 @@ const StokOpnameScreen = ({navigation}) => {
               targetCabang.kode,
             );
             triggerAnimation();
-            refreshList();
+            await refreshList();
           },
         },
       ]);
@@ -678,7 +871,7 @@ const StokOpnameScreen = ({navigation}) => {
                 targetCabang.kode,
               );
               triggerAnimation();
-              refreshList();
+              await refreshList();
             },
           },
         ],
@@ -713,9 +906,50 @@ const StokOpnameScreen = ({navigation}) => {
           )}
 
           <View style={styles.qtyDisplay}>
-            <Text style={[styles.textQty, isUploaded && {color: '#999'}]}>
-              {item.qty_fisik}
-            </Text>
+            {/* --- [FITUR BARU] INPUT MANUAL KHUSUS KDC --- */}
+            {targetCabang.kode === 'KDC' && !isUploaded ? (
+              <TextInput
+                style={[
+                  styles.textQty,
+                  {
+                    borderBottomWidth: 1,
+                    borderColor: '#1976D2',
+                    minWidth: 50,
+                    textAlign: 'center',
+                    paddingVertical: 0,
+                    paddingHorizontal: 5,
+                  },
+                ]}
+                keyboardType="numeric"
+                defaultValue={String(item.qty_fisik)}
+                onEndEditing={async e => {
+                  const val = parseInt(e.nativeEvent.text, 10);
+                  // Pastikan angka valid dan berbeda dari yang sekarang
+                  if (!isNaN(val) && val !== item.qty_fisik) {
+                    if (val <= 0) {
+                      handleDeleteItem(item.barcode, item.lokasi, item.nama);
+                    } else {
+                      await DB.updateOpnameQtyManual(
+                        item.barcode,
+                        item.lokasi,
+                        targetCabang.kode,
+                        val,
+                      );
+                      await refreshList();
+                      Toast.show({
+                        type: 'success',
+                        text1: 'Qty Diperbarui',
+                        text2: `Stok fisik diubah menjadi ${val} pcs`,
+                      });
+                    }
+                  }
+                }}
+              />
+            ) : (
+              <Text style={[styles.textQty, isUploaded && {color: '#999'}]}>
+                {item.qty_fisik}
+              </Text>
+            )}
             <Text style={styles.labelQty}>Pcs</Text>
           </View>
 
@@ -893,6 +1127,17 @@ const StokOpnameScreen = ({navigation}) => {
                     {summary.totalQty}
                   </Text>
                 </View>
+
+                <View
+                  style={[
+                    styles.statCard,
+                    {borderLeftWidth: 1, borderColor: '#eee'},
+                  ]}>
+                  <Text style={styles.statLabel}>Karung/PL</Text>
+                  <Text style={[styles.statValue, {color: '#673AB7'}]}>
+                    {summary.totalBulk.toLocaleString()}
+                  </Text>
+                </View>
               </View>
             )}
 
@@ -934,6 +1179,18 @@ const StokOpnameScreen = ({navigation}) => {
                 <Text style={[styles.statValue, {color: '#1976D2'}]}>
                   {summary.totalQty.toLocaleString()}
                 </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.statCard,
+                  {borderLeftWidth: 1, borderColor: '#eee'},
+                ]}>
+                <Text style={styles.statLabel}>
+                  PACK {bulkSummary.totalPack}
+                </Text>
+
+                <Text style={styles.statLabel}>PL {bulkSummary.totalPl}</Text>
               </View>
             </View>
           )}
@@ -1216,7 +1473,6 @@ const StokOpnameScreen = ({navigation}) => {
   );
 };
 
-// ... styles tetap sama seperti yang Anda buat ...
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: '#F5F7FA'},
   mainWrapper: {flex: 1},
@@ -1425,7 +1681,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     fontWeight: '600',
   },
-  statValue: {fontSize: 18, fontWeight: 'bold', color: '#333', marginTop: 2},
+  statValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 2,
+  },
 
   // TAB SWITCHER STYLES
   tabContainer: {

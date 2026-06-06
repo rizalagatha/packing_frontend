@@ -61,6 +61,7 @@ const PenjualanListScreen = ({navigation}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [openStartPicker, setOpenStartPicker] = useState(false);
   const [openEndPicker, setOpenEndPicker] = useState(false);
+  const [isBazaarMode, setIsBazaarMode] = useState(false);
 
   // Detail & Struk State
   const [selectedInvoice, setSelectedInvoice] = useState(null);
@@ -90,10 +91,16 @@ const PenjualanListScreen = ({navigation}) => {
         const params = {
           startDate: startDate.toISOString().split('T')[0],
           endDate: endDate.toISOString().split('T')[0],
-          cabang: userInfo.cabang === 'KDC' ? '' : userInfo.cabang,
+          cabang: isBazaarMode
+            ? 'K01'
+            : userInfo.cabang === 'KDC'
+            ? ''
+            : userInfo.cabang,
           search: searchTerm,
           page: targetPage,
           limit: ITEMS_PER_PAGE,
+
+          isBazaar: isBazaarMode ? 'Y' : 'N',
         };
 
         const response = await getInvoicesApi(params, userToken);
@@ -146,6 +153,7 @@ const PenjualanListScreen = ({navigation}) => {
       userInfo.cabang,
       hasMore,
       isLoadingMore,
+      isBazaarMode,
     ],
   );
 
@@ -370,6 +378,40 @@ const PenjualanListScreen = ({navigation}) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* --- UI BARU: TAB TOGGLE MODE TRANSAKSI --- */}
+      <View style={styles.modeContainer}>
+        <TouchableOpacity
+          style={[styles.modeBtn, !isBazaarMode && styles.modeActiveReguler]}
+          onPress={() => {
+            setIsBazaarMode(false);
+            setHasMore(true); // Reset pagination
+          }}>
+          <Icon
+            name="store"
+            size={16}
+            color={!isBazaarMode ? '#fff' : '#666'}
+          />
+          <Text
+            style={[styles.modeText, !isBazaarMode && styles.modeTextActive]}>
+            Toko Reguler
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.modeBtn, isBazaarMode && styles.modeActiveBazaar]}
+          onPress={() => {
+            setIsBazaarMode(true);
+            setHasMore(true); // Reset pagination
+          }}>
+          <Icon name="tent" size={16} color={isBazaarMode ? '#fff' : '#666'} />
+          <Text
+            style={[styles.modeText, isBazaarMode && styles.modeTextActive]}>
+            Bazaar (K01)
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {/* ------------------------------------------- */}
+
       {/* FILTER SECTION */}
       <View style={styles.filterContainer}>
         <View style={styles.dateRow}>
@@ -754,6 +796,39 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   closeButtonTextOutline: {color: '#666', fontWeight: 'bold', fontSize: 13},
+  modeContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#E0E0E0',
+    margin: 10,
+    marginBottom: 0,
+    borderRadius: 8,
+    padding: 3,
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 6,
+    gap: 8,
+  },
+  modeActiveReguler: {
+    backgroundColor: '#1976D2',
+    elevation: 2,
+  },
+  modeActiveBazaar: {
+    backgroundColor: '#E65100',
+    elevation: 2,
+  },
+  modeText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#666',
+  },
+  modeTextActive: {
+    color: '#fff',
+  },
 });
 
 export default PenjualanListScreen;

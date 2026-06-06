@@ -73,6 +73,69 @@ const BazarCashierScreen = ({navigation, route}) => {
     setDefaultCustomer();
   }, [userInfo]);
 
+  const playSound = useCallback(
+    type => {
+      try {
+        if (type === 'success') {
+          const customSound = `beep_success_${deviceSuffix}`;
+          try {
+            SoundPlayer.playSoundFile(customSound, 'mp3');
+          } catch (innerError) {
+            SoundPlayer.playSoundFile('beep_success', 'mp3');
+          }
+        } else {
+          SoundPlayer.playSoundFile('beep_error', 'mp3');
+        }
+      } catch (e) {
+        console.log('Tidak bisa memutar suara', e);
+      }
+    },
+    [deviceSuffix],
+  );
+
+  const refreshCartPrices = useCallback(currentCart => {
+    return currentCart.map(item => {
+      const newPrice = DB.getDynamicPrice(item, currentCart);
+      return {...item, harga: newPrice};
+    });
+  }, []);
+
+  const processAddToCart = useCallback(
+    (product, qty, manualPrice = null) => {
+      setCart(prev => {
+        let newCart;
+        const existing = prev.find(it => it.barcode === product.barcode);
+
+        // Tentukan harga awal: Prioritas Spesial -> Jual -> Manual
+        const initialPrice =
+          manualPrice ||
+          (product.harga_spesial > 0
+            ? product.harga_spesial
+            : product.harga_jual);
+
+        if (existing) {
+          newCart = prev.map(it =>
+            it.barcode === product.barcode
+              ? {...it, qty: it.qty + qty, harga: initialPrice}
+              : it,
+          );
+        } else {
+          newCart = [
+            ...prev,
+            {
+              ...product,
+              qty,
+              harga: initialPrice,
+              unit: 'PCS',
+            },
+          ];
+        }
+        return refreshCartPrices(newCart);
+      });
+    },
+    [refreshCartPrices],
+  );
+
   // --- LOGIKA 2: TANGKAP CUSTOMER YANG DIPILIH DARI LIST ---
   useEffect(() => {
     if (route.params?.selectedCustomer) {
@@ -117,28 +180,10 @@ const BazarCashierScreen = ({navigation, route}) => {
     await AsyncStorage.setItem('@bazar_operator', text);
   };
 
-  const playSound = useCallback(
-    type => {
-      try {
-        if (type === 'success') {
-          const customSound = `beep_success_${deviceSuffix}`;
-          try {
-            SoundPlayer.playSoundFile(customSound, 'mp3');
-          } catch (innerError) {
-            SoundPlayer.playSoundFile('beep_success', 'mp3');
-          }
-        } else {
-          SoundPlayer.playSoundFile('beep_error', 'mp3');
-        }
-      } catch (e) {
-        console.log(`Tidak bisa memutar suara`, e);
-      }
-    },
-    [deviceSuffix],
-  );
-
   const handleScan = async () => {
-    if (!scanInput) return;
+    if (!scanInput) {
+      return;
+    }
     let qty = 1;
     let barcode = scanInput.trim().toUpperCase();
 
@@ -158,7 +203,7 @@ const BazarCashierScreen = ({navigation, route}) => {
       // Produk bundling (promo_qty > 1) biasanya sudah punya harga dasar di Excel
       if (product.harga_jual <= 1 && product.promo_qty <= 1) {
         console.log('⚠️ Warning: Product has no price, showing prompt');
-        Alert.prompt(
+        Alert.alert(
           'Harga Manual',
           `Masukkan harga untuk ${product.nama}:`,
           val => {
@@ -186,49 +231,6 @@ const BazarCashierScreen = ({navigation, route}) => {
     setScanInput('');
     setTimeout(() => scanInputRef.current?.focus(), 100);
   };
-
-  const refreshCartPrices = useCallback(currentCart => {
-    return currentCart.map(item => {
-      const newPrice = DB.getDynamicPrice(item, currentCart);
-      return {...item, harga: newPrice};
-    });
-  }, []);
-
-  const processAddToCart = useCallback(
-    (product, qty, manualPrice = null) => {
-      setCart(prev => {
-        let newCart;
-        const existing = prev.find(it => it.barcode === product.barcode);
-
-        // Tentukan harga awal: Prioritas Spesial -> Jual -> Manual
-        const initialPrice =
-          manualPrice ||
-          (product.harga_spesial > 0
-            ? product.harga_spesial
-            : product.harga_jual);
-
-        if (existing) {
-          newCart = prev.map(it =>
-            it.barcode === product.barcode
-              ? {...it, qty: it.qty + qty, harga: initialPrice}
-              : it,
-          );
-        } else {
-          newCart = [
-            ...prev,
-            {
-              ...product,
-              qty,
-              harga: initialPrice,
-              unit: 'PCS',
-            },
-          ];
-        }
-        return refreshCartPrices(newCart);
-      });
-    },
-    [refreshCartPrices],
-  );
 
   const updateItemQty = useCallback(
     (barcode, delta) => {
@@ -299,7 +301,9 @@ const BazarCashierScreen = ({navigation, route}) => {
     let defaultNama = `BAZAR ${
       userInfo?.nama_cabang || userInfo?.cabang || ''
     }`;
-    if (userInfo?.cabang === 'B01') defaultNama = 'BAZAR SOLO';
+    if (userInfo?.cabang === 'B01') {
+      defaultNama = 'BAZAR SOLO';
+    }
 
     setCustomer({kode: defaultKode, nama: defaultNama});
     setIsPaymentVisible(false);
@@ -391,7 +395,7 @@ const BazarCashierScreen = ({navigation, route}) => {
                 isPromoActive ? styles.boxLabelActive : {},
               ]}>
               <Text
-                style={[styles.boxText, isPromoActive ? {color: '#fff'} : {}]}>
+                style={[styles.boxText, isPromoActive && styles.boxTextActive]}>
                 {item.keterangan || 'UMUM'}
               </Text>
             </View>
@@ -442,7 +446,7 @@ const BazarCashierScreen = ({navigation, route}) => {
         <View style={styles.iconCircle}>
           <Icon name="user" size={16} color="#E91E63" />
         </View>
-        <View style={{flex: 1, marginLeft: 10}}>
+        <View style={styles.customerInfoWrapper}>
           <Text style={styles.customerLabel}>PELANGGAN</Text>
           <Text style={styles.customerText}>{customer.nama}</Text>
           <Text style={styles.customerSubText}>{customer.kode}</Text>
@@ -452,7 +456,7 @@ const BazarCashierScreen = ({navigation, route}) => {
 
       <View style={styles.inputArea}>
         <View style={styles.rowInputs}>
-          <View style={{flex: 1}}>
+          <View style={styles.flex1}>
             <Text style={styles.miniLabel}>OPERATOR</Text>
             <TextInput
               style={styles.inputOperator}
@@ -461,7 +465,7 @@ const BazarCashierScreen = ({navigation, route}) => {
               onChangeText={handleOperatorChange}
             />
           </View>
-          <View style={{flex: 2}}>
+          <View style={styles.flex2}>
             <Text style={styles.miniLabel}>SCAN BARCODE</Text>
             <View style={styles.scanWrapper}>
               <TextInput
@@ -488,7 +492,7 @@ const BazarCashierScreen = ({navigation, route}) => {
         data={cart}
         keyExtractor={(item, index) => `${item.barcode}-${index}`}
         renderItem={renderItem}
-        contentContainerStyle={{paddingBottom: 20}}
+        contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Icon name="shopping-cart" size={64} color="#DDD" />
@@ -498,7 +502,7 @@ const BazarCashierScreen = ({navigation, route}) => {
       />
 
       <View style={styles.footer}>
-        <View style={{flex: 1}}>
+        <View style={styles.flex1}>
           {totalHemat > 0 && (
             <View style={styles.hematBadge}>
               <Text style={styles.hematText}>
@@ -808,6 +812,23 @@ const styles = StyleSheet.create({
 
   emptyContainer: {alignItems: 'center', marginTop: 50},
   emptyText: {marginTop: 10, color: '#AAA', fontSize: 14},
+
+  boxTextActive: {
+    color: '#fff',
+  },
+  customerInfoWrapper: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  flex1: {
+    flex: 1,
+  },
+  flex2: {
+    flex: 2,
+  },
+  listContent: {
+    paddingBottom: 20,
+  },
 });
 
 export default BazarCashierScreen;

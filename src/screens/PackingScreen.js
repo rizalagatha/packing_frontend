@@ -42,9 +42,30 @@ if (
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+// Komponen Render Item dipisahkan (Mencegah "Do not define components during render")
+const PackingListItem = React.memo(({item, highlightedBarcode, onDelete}) => (
+  <View
+    style={[
+      styles.itemContainer,
+      item.barcode === highlightedBarcode && styles.highlightedItem,
+    ]}>
+    <View style={styles.itemInfo}>
+      <Text style={styles.itemName}>{item.nama}</Text>
+      <Text style={styles.itemDetails}>
+        Size: {item.ukuran} | Stok: {item.stok}
+      </Text>
+    </View>
+    <Text style={styles.itemQty}>x {item.qty}</Text>
+    <TouchableOpacity
+      onPress={() => onDelete(item)}
+      style={styles.deleteButton}>
+      <Icon name="trash-2" size={20} color="#D32F2F" />
+    </TouchableOpacity>
+  </View>
+));
+
 const PackingScreen = ({navigation}) => {
   const {userToken, userInfo} = useContext(AuthContext);
-
   const barcodeInputRef = useRef(null);
 
   // State utama
@@ -73,7 +94,6 @@ const PackingScreen = ({navigation}) => {
 
   // Menghitung total kuantitas
   const totalQty = useMemo(() => {
-    // Pastikan item.qty adalah angka sebelum dijumlahkan
     return items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
   }, [items]);
 
@@ -109,18 +129,22 @@ const PackingScreen = ({navigation}) => {
   }, []);
 
   // --- Menambahkan Tombol Reset di Header ---
+  // Bungkus komponen header di dalam useCallback agar linter bahagia
+  const renderHeaderRight = useCallback(() => {
+    return (
+      <TouchableOpacity onPress={handleReset} style={styles.headerResetIcon}>
+        <Icon name="rotate-ccw" size={24} color="#D32F2F" />
+      </TouchableOpacity>
+    );
+  }, [handleReset]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={handleReset} style={{marginRight: 15}}>
-          <Icon name="rotate-ccw" size={24} color="#D32F2F" />
-        </TouchableOpacity>
-      ),
+      headerRight: renderHeaderRight,
     });
-  }, [navigation, handleReset]);
+  }, [navigation, renderHeaderRight]);
 
   // --- LOGIKA INTI ---
-
   const validateAndAddItem = useCallback(
     async (barcode, spk) => {
       if (!spk) {
@@ -143,25 +167,16 @@ const PackingScreen = ({navigation}) => {
           );
 
           if (existingItemIndex > -1) {
-            // --- OPTIMASI 1: Update Qty & Pindah ke Atas ---
-            // Kita tidak pakai LayoutAnimation di sini agar UI tidak "kejang" saat scan cepat
             const newItems = [...prevItems];
             const target = newItems[existingItemIndex];
-
             target.qty = (Number(target.qty) || 0) + 1;
-
-            // Logika pindah ke paling atas agar user langsung lihat perubahannya
             newItems.splice(existingItemIndex, 1);
             newItems.unshift(target);
-
             return newItems;
           } else {
-            // --- OPTIMASI 2: Animasi Hanya untuk Item Baru ---
-            // UI Thread Android lebih enteng jika animasi hanya dipicu saat jumlah baris bertambah
             LayoutAnimation.configureNext(
               LayoutAnimation.Presets.easeInEaseOut,
             );
-
             const newItem = {
               barcode: product.barcode,
               kode: product.kode,
@@ -182,8 +197,6 @@ const PackingScreen = ({navigation}) => {
         playSound('error');
       }
 
-      // --- OPTIMASI 3: Refocus Tanpa Delay ---
-      // Gunakan requestAnimationFrame agar fokus tidak bertabrakan dengan proses render React
       requestAnimationFrame(() => {
         barcodeInputRef.current?.focus();
       });
@@ -191,9 +204,28 @@ const PackingScreen = ({navigation}) => {
     [userInfo.cabang, userToken, playSound],
   );
 
+  // Fungsi helper untuk memproses pilihan setelah divalidasi (Di-hoist agar bisa jadi dependency)
+  const proceedSelectSpk = useCallback(
+    async (spk, barcodeToProcess) => {
+      setSelectedSpk(spk);
+      setSpkModalVisible(false);
+      Toast.show({type: 'info', text1: 'SPK Dipilih', text2: spk.spkd_nomor});
+
+      if (barcodeToProcess) {
+        try {
+          await validateAndAddItem(barcodeToProcess, spk);
+        } catch (error) {
+          console.log('Error saat validasi barcode pertama:', error.message);
+        }
+      } else {
+        setTimeout(() => barcodeInputRef.current?.focus(), 100);
+      }
+    },
+    [validateAndAddItem],
+  );
+
   const handleSelectSpk = useCallback(
     async (spk, barcodeToProcess) => {
-      // Jika sudah ada SPK terpilih, abaikan pemilihan baru
       if (selectedSpk) {
         Toast.show({
           type: 'info',
@@ -205,37 +237,48 @@ const PackingScreen = ({navigation}) => {
         return;
       }
 
-      // SPK pertama kali dipilih → kunci di sini
-      setSelectedSpk(spk);
-      setSpkModalVisible(false);
-      Toast.show({type: 'info', text1: 'SPK Dipilih', text2: spk.spkd_nomor});
-
-      // PERBAIKAN: Validasi ulang barcode pertama dengan SPK yang dipilih
-      if (barcodeToProcess) {
-        try {
-          await validateAndAddItem(barcodeToProcess, spk);
-        } catch (error) {
-          console.log(
-            '   ❌ Error saat validasi barcode pertama:',
-            error.message,
-          );
-        }
-      } else {
-        barcodeInputRef.current?.focus();
+      if (
+        spk.spk_close === 1 ||
+        spk.spk_close === '1' ||
+        spk.spk_close === 'Y'
+      ) {
+        setSpkModalVisible(false);
+        Alert.alert(
+          'SPK Sudah Close',
+          `Perhatian! SPK ${spk.spkd_nomor} berstatus SUDAH CLOSE.\n\nApakah Anda yakin ingin tetap menggunakan SPK ini untuk packing?`,
+          [
+            {
+              text: 'Batal',
+              style: 'cancel',
+              onPress: () => {
+                setScannedBarcode('');
+                setTimeout(() => barcodeInputRef.current?.focus(), 100);
+              },
+            },
+            {
+              text: 'Ya, Lanjut',
+              style: 'destructive',
+              onPress: () => {
+                proceedSelectSpk(spk, barcodeToProcess);
+              },
+            },
+          ],
+          {cancelable: false},
+        );
+        return;
       }
+
+      proceedSelectSpk(spk, barcodeToProcess);
     },
-    [validateAndAddItem, selectedSpk],
+    [selectedSpk, proceedSelectSpk], // proceedSelectSpk sekarang masuk ke dependency array dengan aman
   );
 
   const handleBarcodeScan = useCallback(async () => {
-    // 1. Ambil nilai mentah segera
     const rawBarcode = scannedBarcode;
-    if (!rawBarcode || isScanning) return;
-
-    // 2. RESPON INSTAN: Bersihkan input & Mainkan suara duluan agar user merasa cepat
+    if (!rawBarcode || isScanning) {
+      return;
+    }
     setScannedBarcode('');
-    // playSound('success'); // Opsi: Bunyi "tik" kecil atau beep sukses awal
-
     const barcode = rawBarcode.trim().replace(/^0+/, '');
     setIsScanning(true);
 
@@ -262,7 +305,6 @@ const PackingScreen = ({navigation}) => {
           setSpkModalVisible(true);
         }
       } else {
-        // --- Scan Berikutnya ---
         await validateAndAddItem(barcode, selectedSpk);
       }
     } catch (error) {
@@ -270,7 +312,6 @@ const PackingScreen = ({navigation}) => {
       Toast.show({type: 'error', text1: 'Error', text2: message});
       playSound('error');
     } finally {
-      // 3. Kembalikan fokus secepat mungkin tanpa menunggu render selesai
       setIsScanning(false);
       requestAnimationFrame(() => {
         barcodeInputRef.current?.focus();
@@ -358,27 +399,6 @@ const PackingScreen = ({navigation}) => {
     );
   }, [items, selectedSpk, userToken, navigation]);
 
-  const renderItem = ({item}) => (
-    <View
-      style={[
-        styles.itemContainer,
-        item.barcode === highlightedBarcode && styles.highlightedItem,
-      ]}>
-      <View style={styles.itemInfo}>
-        <Text style={styles.itemName}>{item.nama}</Text>
-        <Text style={styles.itemDetails}>
-          Size: {item.ukuran} | Stok: {item.stok}
-        </Text>
-      </View>
-      <Text style={styles.itemQty}>x {item.qty}</Text>
-      <TouchableOpacity
-        onPress={() => handleDeleteItem(item)}
-        style={styles.deleteButton}>
-        <Icon name="trash-2" size={20} color="#D32F2F" />
-      </TouchableOpacity>
-    </View>
-  );
-
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <StatusBar barStyle="dark-content" />
@@ -442,7 +462,7 @@ const PackingScreen = ({navigation}) => {
               style={styles.inputIcon}
             />
             <TextInput
-              ref={barcodeInputRef} // -> Hubungkan ref ke TextInput
+              ref={barcodeInputRef}
               style={styles.input}
               placeholder={
                 selectedSpk
@@ -466,7 +486,13 @@ const PackingScreen = ({navigation}) => {
 
         <FlatList
           data={items}
-          renderItem={renderItem}
+          renderItem={({item}) => (
+            <PackingListItem
+              item={item}
+              highlightedBarcode={highlightedBarcode}
+              onDelete={handleDeleteItem}
+            />
+          )}
           keyExtractor={item => item.barcode}
           initialNumToRender={10}
           maxToRenderPerBatch={5}
@@ -516,6 +542,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
   },
+  headerResetIcon: {
+    marginRight: 15,
+  },
   label: {fontSize: 14, color: '#757575', marginBottom: 6, marginLeft: 4},
   lookupButton: {
     flexDirection: 'row',
@@ -538,7 +567,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 10,
-    backgroundColor: '#F4F6F8', // Warna sama dengan background utama
+    backgroundColor: '#F4F6F8',
     borderTopWidth: 1,
     borderBottomWidth: 1,
     borderColor: '#E0E0E0',
@@ -637,12 +666,12 @@ const styles = StyleSheet.create({
   spkNomor: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#212121', // Pastikan warna ada
+    color: '#212121',
   },
   spkQty: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#D32F2F', // Beri warna merah agar menonjol
+    color: '#D32F2F',
   },
   spkNama: {fontSize: 14, color: '#666'},
   spkTanggal: {

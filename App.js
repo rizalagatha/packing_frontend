@@ -224,19 +224,23 @@ const App = () => {
     return <SplashScreen />;
   }
 
-  if (isBranchSelectionRequired) {
-    return <BranchSelectionScreen />;
-  }
-
   return (
     <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{animation: 'slide_from_right'}}>
         {userToken == null ? (
-          <Stack.Screen
-            name="Login"
-            component={LoginScreen}
-            options={{headerShown: false}}
-          />
+          isBranchSelectionRequired ? (
+            <Stack.Screen
+              name="BranchSelection"
+              component={BranchSelectionScreen}
+              options={{headerShown: false}}
+            />
+          ) : (
+            <Stack.Screen
+              name="Login"
+              component={LoginScreen}
+              options={{headerShown: false}}
+            />
+          )
         ) : (
           // Grup Halaman Jika Sudah Login
           <>

@@ -329,8 +329,9 @@ export const getDefaultCustomerApi = token => {
     headers: {Authorization: `Bearer ${token}`},
   });
 };
-export const scanProdukPenjualanApi = (barcode, token) => {
+export const scanProdukPenjualanApi = (barcode, targetCabang, token) => {
   return apiClient.get(`/penjualan/scan/${barcode}`, {
+    params: {cabang: targetCabang}, // <-- TAMBAHKAN PARAMETER INI
     headers: {Authorization: `Bearer ${token}`},
   });
 };

@@ -1,4 +1,10 @@
-import React, {useState, useEffect, useRef, useContext} from 'react'; // Tambah useContext
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useContext,
+  useCallback,
+} from 'react'; // Tambah useContext
 import {
   View,
   Text,
@@ -34,17 +40,22 @@ const BazarOpnameScreen = () => {
 
   useEffect(() => {
     loadHistory();
-  }, []);
+  }, [loadHistory]);
 
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     const data = await DB.getBazarOpnameHistory();
     setHistory(data);
-  };
+  }, []);
 
   const handleSearchBarcode = async code => {
     const item = await DB.getBarangBazarByBarcode(code);
     if (item) {
-      setForm({...form, barcode: item.barcode, nama: item.nama, stokSistem: 0});
+      setForm(prev => ({
+        ...prev,
+        barcode: item.barcode,
+        nama: item.nama,
+        stokSistem: 0,
+      }));
       inputFisikRef.current?.focus();
     } else {
       Alert.alert('Eror', 'Barang tidak ditemukan di database bazar.');
@@ -52,8 +63,9 @@ const BazarOpnameScreen = () => {
   };
 
   const handleSave = async () => {
-    if (!form.barcode || !form.fisik)
+    if (!form.barcode || !form.fisik) {
       return Alert.alert('Pesan', 'Data belum lengkap');
+    }
 
     const qtyFisik = parseFloat(form.fisik);
     const selisih = qtyFisik - form.stokSistem;
@@ -76,7 +88,7 @@ const BazarOpnameScreen = () => {
 
     await DB.saveBazarOpname(header, details);
     setMode('LIST');
-    loadHistory();
+    await loadHistory();
     setForm({barcode: '', nama: '', stokSistem: 0, fisik: ''});
   };
 
@@ -104,7 +116,7 @@ const BazarOpnameScreen = () => {
         return acc;
       }, {});
 
-      for (const noKoreksi in grouped) {
+      for (const noKoreksi of Object.keys(grouped)) {
         const payload = {
           header: grouped[noKoreksi].header,
           details: grouped[noKoreksi].details,
@@ -112,7 +124,7 @@ const BazarOpnameScreen = () => {
         };
 
         const res = await uploadKoreksiBazarApi(payload, userToken);
-        if (res.data.success) {
+        if (res?.data?.success) {
           await DB.markBazarOpnameUploaded(noKoreksi);
         }
       }
@@ -135,7 +147,7 @@ const BazarOpnameScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <View style={{flexDirection: 'row', alignItems: 'center', gap: 15}}>
+        <View style={styles.headerLeft}>
           <TouchableOpacity
             onPress={() => (mode === 'FORM' ? setMode('LIST') : null)}>
             <Icon
@@ -162,7 +174,7 @@ const BazarOpnameScreen = () => {
       </View>
 
       {mode === 'LIST' ? (
-        <View style={{flex: 1}}>
+        <View style={styles.flex1}>
           <FlatList
             data={history}
             keyExtractor={it => it.no_koreksi + it.barcode}
@@ -172,7 +184,7 @@ const BazarOpnameScreen = () => {
                   styles.historyCard,
                   item.is_uploaded === 1 && styles.cardUploaded,
                 ]}>
-                <View style={{flex: 1}}>
+                <View style={styles.flex1}>
                   <Text
                     style={[
                       styles.histName,
@@ -205,7 +217,12 @@ const BazarOpnameScreen = () => {
               style={styles.input}
               placeholder="Scan/Ketik Barcode..."
               value={form.barcode}
-              onChangeText={t => setForm({...form, barcode: t})}
+              onChangeText={t =>
+                setForm(prev => ({
+                  ...prev,
+                  barcode: t,
+                }))
+              }
               onSubmitEditing={() => handleSearchBarcode(form.barcode)}
             />
             <TouchableOpacity
@@ -227,7 +244,12 @@ const BazarOpnameScreen = () => {
             keyboardType="numeric"
             placeholder="0"
             value={form.fisik}
-            onChangeText={t => setForm({...form, fisik: t})}
+            onChangeText={t =>
+              setForm(prev => ({
+                ...prev,
+                fisik: t,
+              }))
+            }
           />
 
           <TouchableOpacity style={styles.btnSave} onPress={handleSave}>
@@ -328,6 +350,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 5,
+  },
+
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15,
+  },
+  flex1: {
+    flex: 1,
   },
 });
 

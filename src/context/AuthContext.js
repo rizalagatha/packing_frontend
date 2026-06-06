@@ -199,10 +199,17 @@ export const AuthProvider = ({children}) => {
   );
 
   const logout = useCallback(async () => {
-    // Bersihkan timer
+    // FIX: Cegah tembakan API jika token memang belum ada (mencegah loop 401 Interceptor)
+    if (userToken) {
+      try {
+        await updateFcmTokenApi(null, userToken);
+      } catch (e) {
+        console.log('Gagal hapus token di server, lanjut logout...');
+      }
+    }
+
     if (logoutTimer.current) clearTimeout(logoutTimer.current);
 
-    // Unsubscribe sebelum hapus data
     if (userInfo && userInfo.cabang) {
       unsubscribeFromTopic(userInfo.cabang);
     }
@@ -215,7 +222,7 @@ export const AuthProvider = ({children}) => {
 
     await AsyncStorage.removeItem('userToken');
     await AsyncStorage.removeItem('userInfo');
-  }, [userInfo, unsubscribeFromTopic]);
+  }, [userInfo, unsubscribeFromTopic, userToken]);
 
   // --- 4. EFFECTS ---
 
