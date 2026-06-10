@@ -720,3 +720,17 @@ export const saveTerimaReturDcApi = (data, token) => {
     headers: {Authorization: `Bearer ${token}`},
   });
 };
+
+// --- Lost Order ---
+export const saveLostOrderApi = (data, token) => {
+  return apiClient.post('/lost-order', data, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getLostOrderHistoryApi = (params, token) => {
+  return apiClient.get('/lost-order', {
+    params,
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};

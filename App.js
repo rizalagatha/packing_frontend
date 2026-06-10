@@ -45,6 +45,7 @@ import BazarOpnameScreen from './src/screens/BazarOpnameScreen';
 import BazarCashierScreen from './src/screens/BazarCashierScreen';
 import BazarSalesHistoryScreen from './src/screens/BazarSalesHistoryScreen';
 import TerimaReturDcScreen from './src/screens/TerimaReturDcScreen';
+import LostOrderScreen from './src/screens/LostOrderScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -348,6 +349,15 @@ const App = () => {
               name="StokOpname"
               component={StokOpnameScreen}
               options={{title: 'Stok Opname (Offline)'}}
+            />
+            <Stack.Screen
+              name="LostOrder"
+              component={LostOrderScreen}
+              options={{
+                title: 'Catat Lost Order',
+                headerStyle: {backgroundColor: '#0F172A'}, // Tema gelap sesuai screenshot
+                headerTintColor: '#fff',
+              }}
             />
             <Stack.Screen
               name="BazarSync"

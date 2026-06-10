@@ -542,15 +542,56 @@ const PackingListScreen = ({navigation, route}) => {
                 </Text>
               </>
             ) : (
-              <>
-                <Text style={styles.itemKode}>{item.nomor}</Text>
+              <View>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}>
+                  <Text style={styles.itemKode}>{item.nomor}</Text>
+
+                  {/* Badge Manual vs Otomatis */}
+                  <View
+                    style={[
+                      styles.badge,
+                      {
+                        backgroundColor:
+                          item.otomatis === 'Y' || item.otomatis === '1'
+                            ? '#E8F5E9'
+                            : '#E3F2FD',
+                      },
+                    ]}>
+                    <Text
+                      style={[
+                        styles.badgeText,
+                        {
+                          color:
+                            item.otomatis === 'Y' || item.otomatis === '1'
+                              ? '#2E7D32'
+                              : '#1565C0',
+                        },
+                      ]}>
+                      {item.otomatis === 'Y' || item.otomatis === '1'
+                        ? 'AUTO'
+                        : 'MANUAL'}
+                    </Text>
+                  </View>
+                </View>
+
                 <Text style={styles.itemNama}>
                   Tgl: {item.tanggal ? item.tanggal.split('T')[0] : '-'}
                 </Text>
-                <Text style={{fontSize: 12, fontStyle: 'italic'}}>
-                  {item.keterangan}
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontStyle: 'italic',
+                    color: '#666',
+                    marginTop: 2,
+                  }}>
+                  {item.keterangan || 'Tanpa Keterangan'}
                 </Text>
-              </>
+              </View>
             )}
           </View>
         )}

@@ -27,6 +27,7 @@ import {AuthContext} from '../context/AuthContext';
 import Icon from 'react-native-vector-icons/Feather';
 import LinearGradient from 'react-native-linear-gradient';
 import ManagementDashboardScreen from './ManagementDashboardScreen';
+import LostOrderWidget from '../components/LostOrderWidget';
 // Import API yang dibutuhkan untuk otorisasi
 import {
   getPendingAuthorizationApi,
@@ -275,6 +276,8 @@ const DashboardScreen = ({navigation}) => {
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [processingAuth, setProcessingAuth] = useState(null);
   const [expandedBranch, setExpandedBranch] = useState(null);
+  const [isLostOrderVisible, setIsLostOrderVisible] = useState(false);
+
   const isMounted = useRef(true);
 
   useEffect(() => {
@@ -507,6 +510,19 @@ const DashboardScreen = ({navigation}) => {
       allowed: userInfo?.cabang === 'KDC', // Hanya muncul untuk user DC
     },
     // TOKO
+    {
+      group: 'Toko',
+      title: 'Riwayat Lost Order',
+      desc: 'Lihat daftar lost order',
+      iconName: 'clipboard', // Ganti icon agar melambangkan riwayat/catatan
+      iconColor: '#E91E63',
+      bgColor: '#FCE4EC',
+      onPress: () => navigation.navigate('LostOrder'), // Tetap ke screen, nanti kita rombak screen-nya
+      allowed:
+        userInfo?.cabang?.startsWith('K') &&
+        !['KDC', 'KBS'].includes(userInfo?.cabang) &&
+        !isBazarUser,
+    },
     {
       group: 'Toko',
       title: 'Permintaan Otomatis',
@@ -805,6 +821,22 @@ const DashboardScreen = ({navigation}) => {
           </View>
         </View>
       </Modal>
+
+      <LostOrderWidget
+        visible={isLostOrderVisible}
+        onClose={() => setIsLostOrderVisible(false)}
+      />
+
+      {userInfo?.cabang?.startsWith('K') &&
+        !['KDC', 'KBS'].includes(userInfo?.cabang) &&
+        !isBazarUser && (
+          <TouchableOpacity
+            style={styles.fabLostOrder}
+            onPress={() => setIsLostOrderVisible(true)}
+            activeOpacity={0.8}>
+            <Icon name="user-x" size={24} color="#FFF" />
+          </TouchableOpacity>
+        )}
     </View>
   );
 };
@@ -1127,6 +1159,25 @@ const styles = StyleSheet.create({
   branchContent: {
     padding: 10,
     backgroundColor: '#FAFAFA',
+  },
+
+  // --- FLOATING ACTION BUTTON ---
+  fabLostOrder: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#E91E63', // Warna Pink/Merah khas Lost Order
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#E91E63',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    zIndex: 100, // Pastikan selalu berada di paling atas
   },
 });
 

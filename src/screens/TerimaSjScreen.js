@@ -101,12 +101,9 @@ const TerimaSjScreen = ({navigation}) => {
       try {
         const response = await loadSjToReceiveApi(selectedSj.nomor, userToken);
         setSjHeader(response.data.data.header);
-        const itemsWithReceiveQty = response.data.data.items.map(item => ({
-          ...item,
-          jumlahTerima: 0,
-        }));
-        setItems(itemsWithReceiveQty);
-        setPendingData(null); // Reset pending data jika memuat SJ baru
+        // jumlahTerima sudah diset = jumlahKirim dari backend, tidak perlu mapping ulang
+        setItems(response.data.data.items);
+        setPendingData(null);
       } catch (error) {
         Toast.show({
           type: 'error',
@@ -308,53 +305,50 @@ const TerimaSjScreen = ({navigation}) => {
 
   // Fungsi untuk menyimpan data penerimaan
   const handleSaveFinal = async () => {
+    // Tentukan pesan konfirmasi berdasarkan status deadline
+    let pesanKonfirmasi =
+      'Anda yakin ingin menyimpan penerimaan ini secara final?';
+
     if (deadlineStatus.status === 'AUTO_EXECUTED') {
-      Alert.alert(
-        'Gagal',
-        'Surat Jalan ini sudah diproses otomatis oleh sistem karena melewati batas H+2.',
-      );
-      return;
+      pesanKonfirmasi =
+        'INFO: Surat Jalan ini melewati batas H+2 dan telah diproses otomatis oleh sistem.\n\nNamun, Anda tetap bisa memperbarui dan menyimpan hasil scan Anda.\n\nLanjutkan Simpan Final?';
     }
 
-    Alert.alert(
-      'Konfirmasi Simpan Final',
-      'Anda yakin ingin menyimpan penerimaan ini secara final?',
-      [
-        {text: 'Batal', style: 'cancel'},
-        {
-          text: 'Ya, Simpan Final',
-          onPress: async () => {
-            setIsSaving(true);
-            try {
-              const payload = {
-                header: {
-                  tanggalTerima: new Date().toISOString().split('T')[0],
-                  nomorMinta: sjHeader.sj_mt_nomor,
-                  nomorSj: sjHeader.sj_nomor,
-                  nomorPending: pendingData ? pendingData.nomor : null,
-                },
-                items: items,
-              };
-              const response = await saveTerimaSjApi(payload, userToken);
-              Toast.show({
-                type: 'success',
-                text1: 'Sukses',
-                text2: response.data.message,
-              });
-              navigation.goBack();
-            } catch (error) {
-              Toast.show({
-                type: 'error',
-                text1: 'Gagal Menyimpan',
-                text2: error.response?.data?.message,
-              });
-            } finally {
-              setIsSaving(false);
-            }
-          },
+    Alert.alert('Konfirmasi Simpan Final', pesanKonfirmasi, [
+      {text: 'Batal', style: 'cancel'},
+      {
+        text: 'Ya, Simpan Final',
+        onPress: async () => {
+          setIsSaving(true);
+          try {
+            const payload = {
+              header: {
+                tanggalTerima: new Date().toISOString().split('T')[0],
+                nomorMinta: sjHeader.sj_mt_nomor,
+                nomorSj: sjHeader.sj_nomor,
+                nomorPending: pendingData ? pendingData.nomor : null,
+              },
+              items: items,
+            };
+            const response = await saveTerimaSjApi(payload, userToken);
+            Toast.show({
+              type: 'success',
+              text1: 'Sukses',
+              text2: response.data.message,
+            });
+            navigation.goBack();
+          } catch (error) {
+            Toast.show({
+              type: 'error',
+              text1: 'Gagal Menyimpan',
+              text2: error.response?.data?.message,
+            });
+          } finally {
+            setIsSaving(false);
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const handleSavePending = async () => {
@@ -422,11 +416,25 @@ const TerimaSjScreen = ({navigation}) => {
   const renderItem = ({item}) => (
     <View style={styles.itemContainer}>
       <View style={styles.itemInfo}>
+        {item.jenisBahan && (
+          <View
+            style={[
+              styles.bahanBadge,
+              {
+                backgroundColor:
+                  item.jenisBahan === 'OBAT' ? '#9C27B0' : '#00897B',
+              },
+            ]}>
+            <Text style={styles.bahanBadgeText}>{item.jenisBahan}</Text>
+          </View>
+        )}
         <Text selectable={true} style={styles.itemName}>
           {item.nama}
         </Text>
         <Text style={styles.itemDetails}>
-          Size: {item.ukuran} | Barcode: {item.barcode}
+          {item.jenisBahan
+            ? `Satuan: ${item.ukuran} | Kode: ${item.kode}`
+            : `Size: ${item.ukuran} | Barcode: ${item.barcode}`}
         </Text>
       </View>
       <View style={styles.qtyContainer}>
@@ -731,6 +739,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     marginLeft: 8,
+  },
+  bahanBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  bahanBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 });
 

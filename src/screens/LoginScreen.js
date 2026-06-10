@@ -12,9 +12,9 @@ import {
   Animated,
   TouchableWithoutFeedback,
   Dimensions,
-  KeyboardAvoidingView, // <--- 1. Import ini
+  KeyboardAvoidingView,
   Platform,
-  ScrollView, // <--- 2. Import ini
+  ScrollView,
   Alert,
   Modal,
 } from 'react-native';
@@ -82,6 +82,8 @@ const LoginScreen = () => {
   const [isUpdateModalVisible, setIsUpdateModalVisible] = useState(false);
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateMessage, setUpdateMessage] = useState('Menyiapkan unduhan...');
+  const [updateData, setUpdateData] = useState(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // State untuk Error Highlight (Border Merah)
   const [errorField, setErrorField] = useState(''); // 'user', 'pass', atau ''
@@ -110,6 +112,7 @@ const LoginScreen = () => {
   const downloadAndInstallApk = async apkUrl => {
     // Tampilkan Modal Progress
     setIsUpdateModalVisible(true);
+    setIsDownloading(true);
     setUpdateProgress(0);
     setUpdateMessage('Mengunduh pembaruan...');
 
@@ -157,6 +160,7 @@ const LoginScreen = () => {
             .catch(err => {
               console.log('Gagal buka file instalasi:', err);
               setIsUpdateModalVisible(false);
+              setIsDownloading(false);
               Alert.alert(
                 'Error',
                 'Gagal memicu proses instalasi Android. Pastikan izin penyimpanan aktif.',
@@ -167,6 +171,7 @@ const LoginScreen = () => {
     } catch (err) {
       console.log('Download error:', err);
       setIsUpdateModalVisible(false);
+      setIsDownloading(false);
       Alert.alert(
         'Gagal',
         'Terjadi kesalahan saat mengunduh update dari server.',
@@ -260,30 +265,69 @@ const LoginScreen = () => {
             <View style={styles.iconUpdateBg}>
               <Icon name="download-cloud" size={36} color="#fff" />
             </View>
-            <Text style={styles.updateTitle}>Memperbarui Aplikasi</Text>
-            <Text style={styles.updateDesc}>{updateMessage}</Text>
+            <Text style={styles.updateTitle}>Pembaruan Tersedia!</Text>
 
-            {/* Progress Bar Container */}
-            <View style={styles.progressBarBg}>
-              <View
-                style={[styles.progressBarFill, {width: `${updateProgress}%`}]}
-              />
-            </View>
+            {/* Tampilan Release Notes sbg List */}
+            {!isDownloading && updateData && (
+              <View style={styles.releaseNotesContainer}>
+                <Text style={styles.releaseNotesHeader}>
+                  Yang Baru di Versi Ini:
+                </Text>
+                <ScrollView
+                  style={{maxHeight: 150}}
+                  showsVerticalScrollIndicator={false}>
+                  {Array.isArray(updateData.releaseNotes) ? (
+                    updateData.releaseNotes.map((note, index) => (
+                      <View key={index} style={styles.noteItem}>
+                        <Text style={styles.bullet}>•</Text>
+                        <Text style={styles.noteText}>{note}</Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.noteText}>
+                      {updateData.releaseNotes}
+                    </Text>
+                  )}
+                </ScrollView>
+              </View>
+            )}
 
-            <View
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                width: '100%',
-                marginTop: 5,
-              }}>
-              <Text style={styles.progressTextL}>
-                {Math.round(updateProgress)}%
-              </Text>
-              <Text style={styles.progressTextR}>
-                Mohon jangan tutup aplikasi
-              </Text>
-            </View>
+            {isDownloading ? (
+              <>
+                <Text style={styles.updateDesc}>{updateMessage}</Text>
+                <View style={styles.progressBarBg}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      {width: `${updateProgress}%`},
+                    ]}
+                  />
+                </View>
+                <View style={styles.progressTextRow}>
+                  <Text style={styles.progressTextL}>
+                    {Math.round(updateProgress)}%
+                  </Text>
+                  <Text style={styles.progressTextR}>
+                    Jangan tutup aplikasi
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <View style={styles.updateActions}>
+                <TouchableOpacity
+                  style={styles.btnUpdateCancel}
+                  onPress={() => setIsUpdateModalVisible(false)}>
+                  <Text style={styles.btnUpdateCancelText}>Nanti Saja</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.btnUpdateConfirm}
+                  onPress={() => downloadAndInstallApk(updateData?.apkUrl)}>
+                  <Text style={styles.btnUpdateConfirmText}>
+                    Update Sekarang
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -523,7 +567,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  // --- STYLE UNTUK MODAL UPDATE ---
+  // --- STYLE MODAL UPDATE ---
   modalOverlayUpdate: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -547,11 +591,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
-    elevation: 5,
-    shadowColor: '#1976D2',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
   },
   updateTitle: {
     fontSize: 20,
@@ -574,19 +613,55 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#4CAF50', // Hijau saat jalan
+    backgroundColor: '#4CAF50',
     borderRadius: 6,
   },
-  progressTextL: {
-    fontSize: 12,
+  progressTextRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 5,
+  },
+  progressTextL: {fontSize: 12, fontWeight: 'bold', color: '#1976D2'},
+  progressTextR: {fontSize: 11, color: '#999', fontStyle: 'italic'},
+
+  // Style Release Notes
+  releaseNotesContainer: {
+    width: '100%',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+    marginTop: 10,
+  },
+  releaseNotesHeader: {
+    fontSize: 14,
     fontWeight: 'bold',
-    color: '#1976D2',
+    color: '#333',
+    marginBottom: 8,
   },
-  progressTextR: {
-    fontSize: 11,
-    color: '#999',
-    fontStyle: 'italic',
+  noteItem: {flexDirection: 'row', marginBottom: 6},
+  bullet: {fontSize: 16, color: '#1976D2', marginRight: 6, lineHeight: 20},
+  noteText: {flex: 1, fontSize: 13, color: '#555', lineHeight: 18},
+
+  // Tombol Update
+  updateActions: {flexDirection: 'row', width: '100%', gap: 10, marginTop: 10},
+  btnUpdateCancel: {
+    flex: 1,
+    padding: 12,
+    alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: '#EEEEEE',
   },
+  btnUpdateCancelText: {color: '#666', fontWeight: 'bold'},
+  btnUpdateConfirm: {
+    flex: 1.5,
+    padding: 12,
+    alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: '#1976D2',
+  },
+  btnUpdateConfirmText: {color: '#FFF', fontWeight: 'bold'},
 });
 
 export default LoginScreen;
