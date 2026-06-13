@@ -186,16 +186,14 @@ const LoginScreen = () => {
           'http://103.94.238.252:3000/api/app/version',
         );
         const serverData = response.data.data;
-        const currentVersionCode = parseInt(DeviceInfo.getBuildNumber(), 10); // Sesuaikan dengan version code di build.gradle
+        const currentVersionCode = parseInt(DeviceInfo.getBuildNumber(), 10);
 
         if (serverData.versionCode > currentVersionCode) {
-          Alert.alert('Update Tersedia!', serverData.releaseNotes, [
-            {text: 'Nanti', style: 'cancel'},
-            {
-              text: 'Update',
-              onPress: () => downloadAndInstallApk(serverData.apkUrl),
-            },
-          ]);
+          // --- PERBAIKAN DI SINI ---
+          // Simpan data dari server ke state, lalu buka modal kustom kita
+          setUpdateData(serverData);
+          setIsUpdateModalVisible(true);
+          // -------------------------
         }
       } catch (e) {
         console.log('Cek update gagal/offline');

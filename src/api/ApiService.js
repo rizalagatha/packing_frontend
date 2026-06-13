@@ -536,6 +536,13 @@ export const getDashboardProductSalesSpreadApi = async (
   });
 };
 
+export const getTodayLostOrdersApi = (token, cabang = '') => {
+  return apiClient.get('/dashboard/today-lost-orders', {
+    params: {cabang},
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
 // --- Authorization (Tidak Berubah) ---
 export const getPendingAuthorizationApi = async token => {
   return apiClient.get('/authorization/pending', {

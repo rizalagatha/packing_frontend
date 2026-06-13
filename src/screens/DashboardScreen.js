@@ -292,7 +292,7 @@ const DashboardScreen = ({navigation}) => {
     const userBranch = userInfo.cabang;
     const userName = userInfo.nama.toUpperCase();
     if (userBranch !== 'KDC') return false;
-    const allowedNames = ['DARUL', 'HARIS', 'ESTU', 'RIO', 'SETYO'];
+    const allowedNames = ['DARUL', 'HARIS', 'ESTU', 'RIO', 'SETYO', 'ADMIN'];
     return allowedNames.some(name => userName.includes(name));
   }, [userInfo]);
 

@@ -751,6 +751,50 @@ const StokOpnameScreen = ({navigation}) => {
     ]);
   };
 
+  const handleResendLog = logItem => {
+    Alert.alert(
+      'Kirim Ulang Data?',
+      `Kirim ulang ${logItem.total_qty} pcs ke server?\n\nLakukan ini HANYA jika data di web terbukti belum masuk atau kurang akibat jaringan bermasalah saat upload sebelumnya.`,
+      [
+        {text: 'Batal', style: 'cancel'},
+        {
+          text: 'Ya, Kirim Ulang',
+          onPress: async () => {
+            setIsLoading(true);
+            try {
+              const parsedItems = JSON.parse(logItem.items_json);
+              const infoDevice = logItem.device || 'Resend Device';
+              const opName =
+                logItem.operator || operatorName || 'Resend Operator';
+
+              const res = await uploadOpnameResultApi(
+                {
+                  items: parsedItems,
+                  targetCabang: logItem.cabang,
+                  deviceInfo: `${infoDevice} (RESEND)`,
+                  operatorName: opName,
+                },
+                userToken,
+              );
+
+              if (res.status === 200 || res.data?.success) {
+                Toast.show({
+                  type: 'success',
+                  text1: 'Berhasil Dikirim Ulang',
+                  text2: 'Data riwayat berhasil dipaksa masuk ke server.',
+                });
+              }
+            } catch (e) {
+              Alert.alert('Gagal', e.message || 'Gagal mengirim ulang data.');
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   // FUNGSI RESET
   const handleReset = () => {
     Alert.alert(
@@ -800,23 +844,33 @@ const StokOpnameScreen = ({navigation}) => {
   };
 
   const handleFixEmergency = () => {
+    const targetRak = lokasi.trim().toUpperCase();
+
+    if (!targetRak) {
+      return Alert.alert(
+        'Perhatian',
+        'Isi dulu nama rak di kolom Lokasi sebelum melakukan reset status.',
+      );
+    }
+
     Alert.alert(
       '🛠️ Maintenance Data',
-      'Paksa status rak "LBLNEW" menjadi "Belum Upload" agar bisa dikirim ulang ke server?',
+      `Paksa status rak "${targetRak}" menjadi "Belum Upload" agar bisa dikirim ulang ke server?`,
       [
         {text: 'Batal', style: 'cancel'},
         {
-          text: 'Ya, Reset LBLNEW',
+          text: `Ya, Reset ${targetRak}`,
           onPress: async () => {
             try {
               setIsLoading(true);
-              await DB.resetUploadStatusByLocation('LBLNEW');
-              await refreshList(); // Refresh tampilan agar data muncul lagi
+              // Sekarang dinamis mengikuti input lokasi
+              await DB.resetUploadStatusByLocation(targetRak);
+              await refreshList();
 
               Toast.show({
                 type: 'success',
                 text1: 'Perbaikan Berhasil',
-                text2: 'Rak LBLNEW kini siap diupload ulang.',
+                text2: `Rak ${targetRak} kini siap diupload ulang.`,
               });
             } catch (e) {
               Alert.alert('Gagal Perbaikan', e.message);
@@ -1406,6 +1460,27 @@ const StokOpnameScreen = ({navigation}) => {
                       />
                       <Text style={styles.btnDetailHistoryText}>
                         Lihat {detailBarang.length} Barang
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.btnDetailHistory,
+                        {backgroundColor: '#FFF3E0'},
+                      ]}
+                      onPress={() => handleResendLog(item)}>
+                      <Icon
+                        name="upload-cloud"
+                        size={12}
+                        color="#E65100"
+                        style={{marginRight: 5}}
+                      />
+                      <Text
+                        style={[
+                          styles.btnDetailHistoryText,
+                          {color: '#E65100'},
+                        ]}>
+                        Kirim Ulang
                       </Text>
                     </TouchableOpacity>
                   </View>

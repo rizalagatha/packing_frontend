@@ -49,6 +49,7 @@ import {
   getPendingAuthorizationApi,
   processAuthorizationApi,
   getDashboardNegativeStockApi,
+  getTodayLostOrdersApi,
 } from '../api/ApiService';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -96,7 +97,7 @@ const CountUp = ({value, formatter, style}) => {
     return () => {
       animatedValue.removeListener(listenerId);
     };
-  }, [value, animatedValue]); // <--- FIX: Tambahkan animatedValue di sini
+  }, [value, animatedValue]);
 
   return (
     <Text style={style}>
@@ -115,7 +116,7 @@ const AnimatedBar = ({percentage, color, height = 10, style}) => {
       useNativeDriver: false,
       easing: Easing.out(Easing.cubic),
     }).start();
-  }, [percentage, widthAnim]); // <--- FIX: Tambahkan widthAnim di sini
+  }, [percentage, widthAnim]);
 
   return (
     <View
@@ -488,9 +489,8 @@ const ManagementDashboardScreen = ({navigation}) => {
     if (name.includes('ESTU')) {
       // ESTU selalu punya akses menu (karena handle Peminjaman Barang)
       authAccess = true;
-    } else if (name.includes('DARUL')) {
-      // DARUL selalu punya akses menu
-      authAccess = true;
+    } else if (name.includes('DARUL') || name.includes('ADMIN')) {
+      authAccess = true; // User ADMIN & DARUL mendapatkan akses penuh otorisasi
     } else if (name.includes('RIO')) {
       // --- TAMBAHKAN INI ---
       authAccess = true;
@@ -503,7 +503,12 @@ const ManagementDashboardScreen = ({navigation}) => {
   }, [userInfo]);
 
   // --- STATE DASHBOARD ---
-  const [todayStats, setTodayStats] = useState({sales: 0, qty: 0, trx: 0});
+  const [todayStats, setTodayStats] = useState({
+    sales: 0,
+    qty: 0,
+    trx: 0,
+    visits: 0,
+  });
   const [piutang, setPiutang] = useState(0);
   const [branchPerformance, setBranchPerformance] = useState([]);
   const [salesChart, setSalesChart] = useState({labels: [], data: [0]});
@@ -568,6 +573,10 @@ const ManagementDashboardScreen = ({navigation}) => {
   // STATE BARU UNTUK STOK MINUS
   const [negativeStockList, setNegativeStockList] = useState([]);
   const [loadingNegativeStock, setLoadingNegativeStock] = useState(false);
+
+  const [visitorModalVisible, setVisitorModalVisible] = useState(false);
+  const [visitorData, setVisitorData] = useState([]);
+  const [loadingVisitor, setLoadingVisitor] = useState(false);
 
   const isMounted = useRef(true);
   const isHaris = userInfo?.kode?.toUpperCase() === 'HARIS';
@@ -679,6 +688,7 @@ const ManagementDashboardScreen = ({navigation}) => {
             sales: res.data.todaySales || 0,
             qty: Number(res.data.todayQty || 0),
             trx: Number(res.data.todayTransactions || 0),
+            visits: Number(res.data.todayVisits || 0),
           });
           setLoadingStats(false);
         }
@@ -883,10 +893,6 @@ const ManagementDashboardScreen = ({navigation}) => {
       const currentFilter =
         filterOverride !== undefined ? filterOverride : dashboardBranchFilter;
 
-      console.log('--- START FETCHING DASHBOARD DATA ---');
-      console.log('Target Filter:', currentFilter);
-      console.log('Using Token:', userToken ? 'Available' : 'MISSING');
-
       // Reset Loading
       setLoadingStats(true);
       setLoadingPiutang(true);
@@ -948,6 +954,7 @@ const ManagementDashboardScreen = ({navigation}) => {
               sales: res.data.todaySales || 0,
               qty: Number(res.data.todayQty || 0),
               trx: Number(res.data.todayTransactions || 0),
+              visits: Number(res.data.todayVisits || 0),
             });
             setLoadingStats(false);
           }
@@ -1103,6 +1110,28 @@ const ManagementDashboardScreen = ({navigation}) => {
       if (isMounted.current) setLoadingAuth(false);
     }
   }, [userToken]);
+
+  const handleOpenVisitorStats = async () => {
+    setVisitorModalVisible(true);
+    setLoadingVisitor(true);
+    setVisitorData([]);
+
+    try {
+      // Masukkan filter cabang aktif saat ini secara dinamis
+      const targetFilter =
+        dashboardBranchFilter === 'ALL' ? '' : dashboardBranchFilter;
+
+      const res = await getTodayLostOrdersApi(userToken, targetFilter);
+      if (isMounted.current) {
+        setVisitorData(res.data?.data || []);
+      }
+    } catch (e) {
+      console.log('Error Load Visitor:', e);
+      ToastAndroid.show('Gagal memuat detail visitor', ToastAndroid.SHORT);
+    } finally {
+      if (isMounted.current) setLoadingVisitor(false);
+    }
+  };
 
   // [BARU] Listener untuk menangkap klik Notifikasi
   useEffect(() => {
@@ -1366,13 +1395,35 @@ const ManagementDashboardScreen = ({navigation}) => {
           </View>
         </View>
         <View style={styles.verticalDivider} />
+
         <View style={styles.headerStatItem}>
           <Icon name="shopping-cart" size={14} color="#BBDEFB" />
           <View style={{flexDirection: 'row'}}>
             <CountUp value={todayStats.trx} style={styles.headerStatValue} />
-            <Text style={styles.headerStatValue}> Transaksi</Text>
+            <Text style={styles.headerStatValue}> Trx</Text>
           </View>
         </View>
+
+        <View style={styles.verticalDivider} />
+
+        {/* --- [BARU] KOLOM JUMLAH KUNJUNGAN CUSTOMER --- */}
+        <TouchableOpacity
+          style={styles.headerStatItem}
+          onPress={handleOpenVisitorStats}
+          activeOpacity={0.7}>
+          <Icon name="users" size={14} color="#BBDEFB" />
+          <View style={{flexDirection: 'row'}}>
+            {loadingStats ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <CountUp
+                value={todayStats.visits || 0}
+                style={styles.headerStatValue}
+              />
+            )}
+            <Text style={styles.headerStatValue}> Visitor</Text>
+          </View>
+        </TouchableOpacity>
       </View>
     </LinearGradient>
   );
@@ -2434,6 +2485,73 @@ const ManagementDashboardScreen = ({navigation}) => {
         // GANTI DARI handleCheckSalesDetail KE handleCheckRealStock
         onItemPress={handleCheckRealStock}
       />
+
+      {/* --- MODAL DAFTAR LOST ORDER (VISITOR) --- */}
+      <Modal
+        visible={visitorModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setVisitorModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, {height: '80%'}]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Detail Visitor Gagal Beli</Text>
+              <TouchableOpacity onPress={() => setVisitorModalVisible(false)}>
+                <Icon name="x" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            {loadingVisitor ? (
+              <ActivityIndicator
+                size="large"
+                color="#1976D2"
+                style={{marginTop: 50}}
+              />
+            ) : visitorData.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Icon name="user-check" size={48} color="#4CAF50" />
+                <Text
+                  style={{color: '#666', marginTop: 10, textAlign: 'center'}}>
+                  Semua pengunjung sukses belanja hari ini.{'\n'}Belum ada Lost
+                  Order!
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={visitorData}
+                keyExtractor={item => item.lo_id.toString()}
+                contentContainerStyle={{padding: 16}}
+                renderItem={({item}) => (
+                  <View style={styles.invoiceItem}>
+                    <View style={{flex: 1, marginRight: 10}}>
+                      <Text style={styles.customerName} numberOfLines={1}>
+                        {item.lo_produk_nama} ({item.lo_ukuran})
+                      </Text>
+                      <Text style={{fontSize: 12, color: '#666'}}>
+                        <Icon name="user-x" size={10} color="#D32F2F" />{' '}
+                        {item.lo_customer_nama || 'Tanpa Nama'} - Cab:{' '}
+                        {item.lo_cabang}
+                      </Text>
+                    </View>
+                    <View style={{alignItems: 'flex-end'}}>
+                      <Text
+                        style={[
+                          styles.invoiceAmount,
+                          {color: '#D32F2F', fontSize: 12},
+                        ]}>
+                        {item.lo_alasan}
+                      </Text>
+                      <Text style={styles.invoiceLabel}>
+                        Qty: {item.lo_qty} Pcs
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
