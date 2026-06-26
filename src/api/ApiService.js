@@ -2,6 +2,7 @@ import axios from 'axios';
 
 // PENTING: Sesuaikan dengan alamat IP Anda!
 const API_URL = 'http://103.94.238.252:3000/api'; // Port Mobile (3000)
+// const API_URL = 'http://192.168.99.112:3004/api';
 const API_URL_WEB = 'http://103.94.238.252:8000/api'; // Port Web (8000)
 
 // Instance standar untuk fitur Mobile (Packing, SJ, Bazar, dll)
@@ -15,17 +16,33 @@ export const apiClientWeb = axios.create({
 });
 
 // --- Auth ---
-export const loginApi = (userKode, password) => {
-  return apiClient.post('/auth/login', {
-    user_kode: userKode,
-    user_password: password,
-  });
+export const loginApi = (userKode, password, latitude, longitude) => {
+  return apiClient.post(
+    '/auth/login',
+    {
+      user_kode: userKode,
+      user_password: password,
+      source: 'mobile',
+      latitude: latitude,
+      longitude: longitude,
+    },
+    {
+      timeout: 10000, // Timeout 10 detik agar user tidak nge-hang jika GPS macet
+    },
+  );
 };
 
-export const selectBranchApi = (branchCode, preAuthToken) => {
+export const selectBranchApi = (
+  branchCode,
+  preAuthToken,
+  latitude,
+  longitude,
+) => {
   return apiClient.post('/auth/select-branch', {
-    branchCode: branchCode,
-    preAuthToken: preAuthToken,
+    branchCode,
+    preAuthToken,
+    latitude, // <--- Dikirim ke Backend
+    longitude, // <--- Dikirim ke Backend
   });
 };
 
@@ -39,6 +56,51 @@ export const updateFcmTokenApi = (fcmToken, token) => {
   );
 };
 
+// --- Auth (Lanjutan: Device Binding / Keystore) ---
+
+// 1. Mendaftarkan perangkat baru
+export const enrollDeviceApi = (
+  userKode,
+  password,
+  deviceId,
+  publicKey,
+  deviceName,
+) => {
+  return apiClient.post('/auth/enroll-device', {
+    user_kode: userKode,
+    user_password: password,
+    device_id: deviceId,
+    public_key: publicKey,
+    device_name: deviceName,
+  });
+};
+
+// 2. Meminta teka-teki (Challenge) dari backend
+export const requestChallengeApi = (userKode, deviceId) => {
+  return apiClient.post('/auth/request-challenge', {
+    user_kode: userKode,
+    device_id: deviceId,
+  });
+};
+
+// 3. Login menggunakan Signature dari Keystore
+export const loginWithDeviceApi = (
+  userKode,
+  password,
+  deviceId,
+  signature,
+  latitude,
+  longitude,
+) => {
+  return apiClient.post('/auth/login-device', {
+    user_kode: userKode,
+    user_password: password,
+    device_id: deviceId,
+    signature: signature,
+    latitude: latitude,
+    longitude: longitude,
+  });
+};
 // --- Packing ---
 export const getPackingHistoryApi = (params, token) => {
   return apiClient.get('/packing/history', {
@@ -423,6 +485,14 @@ export const downloadMasterLokasiApi = (token, cabangKode) => {
 // -> TAMBAHKAN INI (Untuk Upload Hasil Scan)
 export const uploadOpnameResultApi = (data, token) => {
   return apiClient.post('/stok-opname/upload', data, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const checkMismatchLokasiApi = (cabang, lokasi, token) => {
+  return apiClient.get('/stok-opname/compare-lokasi', {
+    // Sesuaikan base URL route Anda
+    params: {cabang, lokasi},
     headers: {Authorization: `Bearer ${token}`},
   });
 };

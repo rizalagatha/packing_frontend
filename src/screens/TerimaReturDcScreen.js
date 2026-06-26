@@ -108,7 +108,9 @@ const TerimaReturDcScreen = ({navigation}) => {
 
   // --- LOGIKA SCAN BARCODE ---
   const handleBarcodeScan = () => {
-    if (!scannedBarcode || isSaving) return;
+    if (!scannedBarcode || isSaving) {
+      return;
+    }
 
     const cleanBarcode = scannedBarcode.trim();
     const itemIndex = items.findIndex(i => i.barcode === cleanBarcode);
@@ -175,7 +177,9 @@ const TerimaReturDcScreen = ({navigation}) => {
 
   // --- HANDLER SAVE FINAL ---
   const handleSave = async isFinal => {
-    if (!header) return;
+    if (!header) {
+      return;
+    }
 
     const actionText = isFinal
       ? 'Simpan Final (Stok Bertambah)'
@@ -209,7 +213,9 @@ const TerimaReturDcScreen = ({navigation}) => {
             });
 
             // Jika final, kembali ke dashboard. Jika pending, tetap di sini atau kembali (sesuai selera).
-            if (isFinal) navigation.goBack();
+            if (isFinal) {
+              navigation.goBack();
+            }
           } catch (error) {
             Alert.alert(
               'Gagal',
@@ -225,7 +231,9 @@ const TerimaReturDcScreen = ({navigation}) => {
 
   // --- HANDLER SAVE FINAL DENGAN LOGGING DETAIL ---
   const handleSaveFinal = async () => {
-    if (!header) return;
+    if (!header) {
+      return;
+    }
 
     Alert.alert('Konfirmasi', 'Simpan Final penerimaan retur ini?', [
       {text: 'Batal', style: 'cancel'},

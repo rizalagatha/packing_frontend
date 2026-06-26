@@ -201,7 +201,9 @@ const SuratJalanScreen = ({navigation, route}) => {
   }, []);
 
   const handleChangeMode = newMode => {
-    if (scanMode === newMode) return; // Tidak melakukan apa-apa jika modenya sama
+    if (scanMode === newMode) {
+      return;
+    } // Tidak melakukan apa-apa jika modenya sama
 
     if (items.length > 0) {
       Alert.alert(
@@ -235,7 +237,9 @@ const SuratJalanScreen = ({navigation, route}) => {
 
   // Fungsi untuk menangani scan barcode packing
   const handleScanPackNomor = async () => {
-    if (!store || !scannedValue || isScanning) return;
+    if (!store || !scannedValue || isScanning) {
+      return;
+    }
 
     if (scannedPacks.has(scannedValue)) {
       Toast.show({

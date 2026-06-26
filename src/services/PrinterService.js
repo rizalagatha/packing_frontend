@@ -52,7 +52,7 @@ const printStruk = async data => {
     text += `<C><B>${header.perush_nama}</B></C>\n`;
     text += `<C>${header.perush_alamat}</C>\n`;
     text += `<C>${header.perush_telp}</C>\n`;
-    text += `<C>--------------------------------</C>\n`;
+    text += '<C>--------------------------------</C>\n';
 
     // --- 2. INFO INVOICE ---
     const dateObj = new Date(header.date_create);
@@ -68,13 +68,13 @@ const printStruk = async data => {
     // --- [BARU] LOGIKA PROMO REGULER (DIPERBAIKI) ---
     // Cek jika ada diskon faktur
     if (header.diskon_faktur > 0) {
-      text += `<C>--------------------------------</C>\n`;
+      text += '<C>--------------------------------</C>\n';
       // HAPUS <B> AGAR UKURAN NORMAL, GANTI EMOJI DENGAN ***
-      text += `<C>*** MENDAPAT PROMO REGULER ***</C>\n`;
+      text += '<C>*** MENDAPAT PROMO REGULER ***</C>\n';
     }
     // ------------------------------------
 
-    text += `<C>--------------------------------</C>\n`;
+    text += '<C>--------------------------------</C>\n';
 
     // --- 3. ITEMS ---
     details.forEach(item => {
@@ -99,7 +99,7 @@ const printStruk = async data => {
       }
     });
 
-    text += `<C>--------------------------------</C>\n`;
+    text += '<C>--------------------------------</C>\n';
 
     // --- 4. SUMMARY ---
     text += formatRow('Total', formatRupiah(header.subTotal));
@@ -118,14 +118,14 @@ const printStruk = async data => {
 
     text += formatRow('Kembali', formatRupiah(header.inv_kembali));
 
-    text += `<C>--------------------------------</C>\n`;
+    text += '<C>--------------------------------</C>\n';
 
     // --- 5. INFO BANK ---
     if (header.gdg_transferbank) {
-      text += `<C>Transfer:</C>\n`;
+      text += '<C>Transfer:</C>\n';
       text += `<C>${header.gdg_transferbank}</C>\n`;
       text += `<C>${header.gdg_akun || ''}</C>\n`;
-      text += `<C>--------------------------------</C>\n`;
+      text += '<C>--------------------------------</C>\n';
     }
 
     // --- 6. DONASI ---
@@ -135,19 +135,19 @@ const printStruk = async data => {
     );
     const donasi = totalQty * 500;
 
-    text += `<C>Dengan membeli produk ini,</C>\n`;
-    text += `<C>Kaosan telah menyisihkan/peduli</C>\n`; // Teks dipotong agar muat 58mm
-    text += `<C>dengan sesama yg membutuhkan</C>\n`;
+    text += '<C>Dengan membeli produk ini,</C>\n';
+    text += '<C>Kaosan telah menyisihkan/peduli</C>\n'; // Teks dipotong agar muat 58mm
+    text += '<C>dengan sesama yg membutuhkan</C>\n';
     text += `<C>sebesar ${formatRupiah(donasi)}</C>\n\n`; // Format Rupiah yang benar
 
     // --- 7. FOOTER NOTE ---
-    text += `<C>BARANG YANG SUDAH DIBELI</C>\n`;
-    text += `<C>TIDAK BISA DIKEMBALIKAN</C>\n`;
-    text += `<C>TERIMAKASIH ATAS KUNJUNGAN ANDA</C>\n`;
+    text += '<C>BARANG YANG SUDAH DIBELI</C>\n';
+    text += '<C>TIDAK BISA DIKEMBALIKAN</C>\n';
+    text += '<C>TERIMAKASIH ATAS KUNJUNGAN ANDA</C>\n';
 
     // --- 8. SOSMED ---
     if (header.gdg_inv_instagram || header.gdg_inv_fb) {
-      text += `\n`;
+      text += '\n';
       if (header.gdg_inv_instagram) {
         text += `<C>IG: ${header.gdg_inv_instagram}</C>\n`;
       }
@@ -156,7 +156,7 @@ const printStruk = async data => {
       }
     }
 
-    text += `\n\n`; // Feed kertas
+    text += '\n\n'; // Feed kertas
 
     await BLEPrinter.printBill(text);
   } catch (err) {
@@ -178,16 +178,16 @@ const printStrukBazar = async data => {
     let text = '';
 
     // 1. HEADER TOKO
-    text += `<C><B>KAOSAN BAZAR</B></C>\n`;
-    text += `<C>Pameran & Event</C>\n`;
-    text += `<C>--------------------------------</C>\n`;
+    text += '<C><B>KAOSAN BAZAR</B></C>\n';
+    text += '<C>Pameran & Event</C>\n';
+    text += '<C>--------------------------------</C>\n';
 
     // 2. INFO NOTA
     text += `No: ${header.so_nomor}\n`;
     text += `Tgl: ${new Date(header.so_tanggal).toLocaleDateString('id-ID')}\n`;
     text += `Kasir: ${header.so_user_nama || header.so_user_kasir}\n`; // Gunakan nama jika ada
     text += `Cus: ${header.cus_nama || 'UMUM'}\n`;
-    text += `<C>--------------------------------</C>\n`;
+    text += '<C>--------------------------------</C>\n';
 
     // 3. ITEMS & CALCULATION (Hanya satu loop di sini)
     let calculatedSubTotal = 0;
@@ -201,7 +201,9 @@ const printStrukBazar = async data => {
       let hargaEcer = item.harga_jual;
       if (promoQty > 1) {
         hargaEcer = Math.floor(100000 / promoQty) + 5000;
-        if (promoQty === 3) hargaEcer = 38500;
+        if (promoQty === 3) {
+          hargaEcer = 38500;
+        }
       }
 
       const totalBaris = qty * hargaEcer;
@@ -215,7 +217,7 @@ const printStrukBazar = async data => {
       );
     });
 
-    text += `<C>--------------------------------</C>\n`;
+    text += '<C>--------------------------------</C>\n';
 
     // 4. SUMMARY (Logika Hemat)
     const grandTotal = header.so_total || 0;
@@ -232,12 +234,12 @@ const printStrukBazar = async data => {
     text += formatRow('BAYAR', formatRupiah(header.so_bayar));
     text += formatRow('KEMBALI', formatRupiah(header.so_kembali));
 
-    text += `<C>--------------------------------</C>\n`;
+    text += '<C>--------------------------------</C>\n';
 
     // 5. FOOTER
-    text += `<C>BARANG YANG SUDAH DIBELI</C>\n`;
-    text += `<C>TIDAK BISA DIKEMBALIKAN</C>\n`;
-    text += `<C>TERIMAKASIH</C>\n\n\n`;
+    text += '<C>BARANG YANG SUDAH DIBELI</C>\n';
+    text += '<C>TIDAK BISA DIKEMBALIKAN</C>\n';
+    text += '<C>TERIMAKASIH</C>\n\n\n';
 
     await BLEPrinter.printBill(text);
   } catch (err) {

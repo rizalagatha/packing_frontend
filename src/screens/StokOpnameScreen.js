@@ -31,6 +31,7 @@ import {
   uploadOpnameResultApi,
   getPackingDetailApi,
   getPackingListDetailApi,
+  checkMismatchLokasiApi,
 } from '../api/ApiService';
 import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
@@ -40,6 +41,8 @@ import SoundPlayer from 'react-native-sound-player';
 import DeviceInfo from 'react-native-device-info';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useWindowDimensions} from 'react-native';
+import RNFS from 'react-native-fs';
+import FileViewer from 'react-native-file-viewer';
 
 if (
   Platform.OS === 'android' &&
@@ -55,7 +58,11 @@ const StokOpnameScreen = ({navigation}) => {
 
   // [LOGIKA USER KHUSUS]
   // RIO di KDC bisa ganti cabang. User lain (atau RIO di toko) terkunci di cabang login.
-  const canSwitchCabang = userInfo.kode === 'RIO' && userInfo.cabang === 'KDC';
+  const canSwitchCabang =
+    (userInfo.kode === 'RIO' ||
+      userInfo.kode === 'ADMIN' ||
+      userInfo.nama?.toUpperCase().includes('ADMIN')) &&
+    userInfo.cabang === 'KDC';
 
   const [targetCabang, setTargetCabang] = useState({
     kode: userInfo.cabang,
@@ -91,6 +98,10 @@ const StokOpnameScreen = ({navigation}) => {
 
   const [syncStage, setSyncStage] = useState(''); // 'downloading', 'saving_items', 'saving_loc'
   const [syncProgress, setSyncProgress] = useState(0);
+
+  const [isCompareModalVisible, setIsCompareModalVisible] = useState(false);
+  const [mismatchResults, setMismatchResults] = useState([]);
+  const [compareTitle, setCompareTitle] = useState('');
 
   const [bulkSummary, setBulkSummary] = useState({
     totalPack: 0,
@@ -263,7 +274,9 @@ const StokOpnameScreen = ({navigation}) => {
     }
 
     // --- 3. MODE TAB: RAK AKTIF ---
-    if (!activeLokasi) return [];
+    if (!activeLokasi) {
+      return [];
+    }
 
     // Ambil SEMUA data di rak tersebut (baik is_uploaded 0 maupun 1)
     return currentList.filter(
@@ -274,12 +287,16 @@ const StokOpnameScreen = ({navigation}) => {
   // --- LOGIC 3: GROUPING DATA (SectionList) ---
   const groupedList = useMemo(() => {
     // Hanya grouping jika di mode GLOBAL dan tidak sedang mencari
-    if (viewMode !== 'GLOBAL' || searchQuery) return [];
+    if (viewMode !== 'GLOBAL' || searchQuery) {
+      return [];
+    }
 
     const groups = {};
     filteredList.forEach(item => {
       const loc = item.lokasi ? item.lokasi.toUpperCase() : 'TANPA LOKASI';
-      if (!groups[loc]) groups[loc] = [];
+      if (!groups[loc]) {
+        groups[loc] = [];
+      }
       groups[loc].push(item);
     });
 
@@ -318,7 +335,7 @@ const StokOpnameScreen = ({navigation}) => {
           SoundPlayer.playSoundFile('beep_error', 'mp3');
         }
       } catch (e) {
-        console.log(`Tidak bisa memutar suara:`, e.message);
+        console.log('Tidak bisa memutar suara:', e.message);
       }
     },
     [deviceSuffix],
@@ -390,7 +407,9 @@ const StokOpnameScreen = ({navigation}) => {
 
   // --- LOGIKA SCAN (SCAN & COUNT + SOUND) ---
   const handleScan = async () => {
-    if (!scannedBarcode) return;
+    if (!scannedBarcode) {
+      return;
+    }
     const cleanBarcode = scannedBarcode.trim();
 
     const scannedData = cleanBarcode.toUpperCase();
@@ -822,6 +841,148 @@ const StokOpnameScreen = ({navigation}) => {
     );
   };
 
+  const handleCompareData = async logItem => {
+    setIsLoading(true);
+    try {
+      const parsedItems = JSON.parse(logItem.items_json);
+
+      // Ambil daftar lokasi unik yang ada di dalam Log ini (misal: 'HG1')
+      const targetLokasi = [...new Set(parsedItems.map(it => it.lokasi))][0];
+
+      if (!targetLokasi) {
+        Alert.alert('Gagal', 'Tidak ada info lokasi di dalam log ini.');
+        return;
+      }
+
+      setCompareTitle(`Komparasi Rak: ${targetLokasi}`);
+
+      // 1. Dapatkan Data dari Server (thitungstok)
+      const res = await checkMismatchLokasiApi(
+        logItem.cabang,
+        targetLokasi,
+        userToken,
+      );
+      const serverData = res.data?.data || [];
+
+      // 2. Akumulasi data Lokal (HP) agar tidak ada barcode ganda
+      const localMap = {};
+      parsedItems.forEach(it => {
+        if (!localMap[it.barcode]) {
+          localMap[it.barcode] = {...it, qty_fisik: 0};
+        }
+        localMap[it.barcode].qty_fisik += Number(it.qty_fisik);
+      });
+
+      // 3. Proses Komparasi
+      const results = [];
+
+      // Cek setiap barang di HP vs Server
+      Object.keys(localMap).forEach(barcode => {
+        const localQty = localMap[barcode].qty_fisik;
+        const serverItem = serverData.find(s => s.barcode === barcode);
+        const serverQty = serverItem ? Number(serverItem.qty_server) : 0;
+
+        if (localQty !== serverQty) {
+          results.push({
+            barcode: barcode,
+            nama: localMap[barcode].nama,
+            lokal: localQty,
+            server: serverQty,
+            selisih: localQty - serverQty, // Positif = Di Server Kurang
+          });
+        }
+      });
+
+      // Cek barang yang ada di Server tapi TIDAK ADA di Log HP ini
+      serverData.forEach(sItem => {
+        if (!localMap[sItem.barcode]) {
+          results.push({
+            barcode: sItem.barcode,
+            nama: sItem.nama,
+            lokal: 0,
+            server: Number(sItem.qty_server),
+            selisih: 0 - Number(sItem.qty_server), // Negatif = Di HP tidak ada
+          });
+        }
+      });
+
+      setMismatchResults(results);
+      setIsCompareModalVisible(true);
+    } catch (error) {
+      console.log('Error Compare:', error);
+      Alert.alert('Error', 'Gagal membandingkan data dengan server.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- [BARU] FUNGSI EXPORT KE EXCEL (CSV) ---
+  const handleExportExcel = async logItem => {
+    try {
+      // 1. Parsing data JSON dari log
+      const parsedItems = JSON.parse(logItem.items_json);
+      if (!parsedItems || parsedItems.length === 0) {
+        Alert.alert('Kosong', 'Tidak ada data untuk di-export.');
+        return;
+      }
+
+      // 2. Tentukan nama file berdasarkan Rak & Waktu
+      const lokasiUnik = [...new Set(parsedItems.map(it => it.lokasi))].join(
+        '_',
+      );
+      const safeLokasi = lokasiUnik.replace(/[^a-zA-Z0-9]/g, ''); // Bersihkan simbol
+      const timestamp = new Date().getTime();
+      const fileName = `Opname_${safeLokasi}_${timestamp}.csv`;
+
+      // 3. Tentukan folder penyimpanan (Folder Download di Android)
+      const path =
+        Platform.OS === 'android'
+          ? `${RNFS.DownloadDirectoryPath}/${fileName}`
+          : `${RNFS.DocumentDirectoryPath}/${fileName}`;
+
+      // 4. Buat Header Kolom Excel
+      let csvString =
+        'Barcode,Kode Barang,Nama Barang,Ukuran,Lokasi,Qty Fisik\n';
+
+      // 5. Isi Baris Data
+      parsedItems.forEach(item => {
+        // Hapus tanda kutip pada nama agar format Excel tidak rusak
+        const safeNama = (item.nama || '').replace(/"/g, '""');
+        const safeKode = item.kode || '';
+        const safeUkuran = item.ukuran || '';
+
+        csvString += `"${item.barcode}","${safeKode}","${safeNama}","${safeUkuran}","${item.lokasi}","${item.qty_fisik}"\n`;
+      });
+
+      // 6. Simpan File ke HP
+      await RNFS.writeFile(path, csvString, 'utf8');
+
+      // 7. Tampilkan Notifikasi & Tawarkan untuk Buka File
+      Alert.alert(
+        'Export Berhasil',
+        `File Excel berhasil disimpan di folder Download dengan nama:\n\n${fileName}`,
+        [
+          {text: 'Tutup', style: 'cancel'},
+          {
+            text: 'Buka File',
+            onPress: () => {
+              FileViewer.open(path, {showOpenWithDialog: true}).catch(err => {
+                console.log(err);
+                Toast.show({
+                  type: 'error',
+                  text1: 'Tidak ada aplikasi Excel/Viewer di HP ini',
+                });
+              });
+            },
+          },
+        ],
+      );
+    } catch (error) {
+      console.error('Export Error:', error);
+      Alert.alert('Gagal Export', error.message);
+    }
+  };
+
   const handleDeleteItem = (barcode, lokasi, nama) => {
     Alert.alert('Hapus Item', `Yakin hapus ${nama} di lokasi ${lokasi}?`, [
       {text: 'Batal'},
@@ -1081,10 +1242,11 @@ const StokOpnameScreen = ({navigation}) => {
         apiSearchFunction={async ({term}) => {
           const res = await getCabangListApi(userToken);
           let rows = res.data.data || [];
-          if (term)
+          if (term) {
             rows = rows.filter(r =>
               r.kode.toLowerCase().includes(term.toLowerCase()),
             );
+          }
           return {data: {data: {items: rows}}};
         }}
         keyField="kode"
@@ -1449,42 +1611,72 @@ const StokOpnameScreen = ({navigation}) => {
                       </Text>
                     </View>
 
-                    <TouchableOpacity
-                      style={styles.btnDetailHistory}
-                      onPress={() => setSelectedLogItems(detailBarang)}>
-                      <Icon
-                        name="eye"
-                        size={12}
-                        color="#1565C0"
-                        style={{marginRight: 5}}
-                      />
-                      <Text style={styles.btnDetailHistoryText}>
-                        Lihat {detailBarang.length} Barang
-                      </Text>
-                    </TouchableOpacity>
+                    {/* ---> INI DIA BAGIAN YANG DIUBAH (DITAMBAH FLEXWRAP) <--- */}
+                    <View
+                      style={{flexDirection: 'row', flexWrap: 'wrap', gap: 10}}>
+                      {/* TOMBOL 1: LIHAT BARANG */}
+                      <TouchableOpacity
+                        style={styles.btnDetailHistory}
+                        onPress={() => setSelectedLogItems(detailBarang)}>
+                        <Icon
+                          name="eye"
+                          size={12}
+                          color="#1565C0"
+                          style={{marginRight: 5}}
+                        />
+                        <Text style={styles.btnDetailHistoryText}>
+                          Lihat {detailBarang.length} Barang
+                        </Text>
+                      </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[
-                        styles.btnDetailHistory,
-                        {backgroundColor: '#FFF3E0'},
-                      ]}
-                      onPress={() => handleResendLog(item)}>
-                      <Icon
-                        name="upload-cloud"
-                        size={12}
-                        color="#E65100"
-                        style={{marginRight: 5}}
-                      />
-                      <Text
+                      {/* TOMBOL 2: KIRIM ULANG */}
+                      <TouchableOpacity
                         style={[
-                          styles.btnDetailHistoryText,
-                          {color: '#E65100'},
-                        ]}>
-                        Kirim Ulang
-                      </Text>
-                    </TouchableOpacity>
+                          styles.btnDetailHistory,
+                          {backgroundColor: '#FFF3E0'},
+                        ]}
+                        onPress={() => handleResendLog(item)}>
+                        <Icon
+                          name="upload-cloud"
+                          size={12}
+                          color="#E65100"
+                          style={{marginRight: 5}}
+                        />
+                        <Text
+                          style={[
+                            styles.btnDetailHistoryText,
+                            {color: '#E65100'},
+                          ]}>
+                          Kirim Ulang
+                        </Text>
+                      </TouchableOpacity>
+
+                      {/* TOMBOL 3: EXPORT EXCEL (BARU) */}
+                      <TouchableOpacity
+                        style={[
+                          styles.btnDetailHistory,
+                          {backgroundColor: '#E8F5E9'},
+                        ]}
+                        onPress={() => handleExportExcel(item)}>
+                        <Icon
+                          name="download"
+                          size={12}
+                          color="#2E7D32"
+                          style={{marginRight: 5}}
+                        />
+                        <Text
+                          style={[
+                            styles.btnDetailHistoryText,
+                            {color: '#2E7D32'},
+                          ]}>
+                          Export Excel
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    {/* ---> AKHIR DARI WRAPPER TOMBOL <--- */}
                   </View>
 
+                  {/* KODE DI BAWAHNYA (Badge Qty) */}
                   <View style={styles.logQtyBadge}>
                     <Text style={styles.logQtyText}>{item.total_qty}</Text>
                     <Text style={{fontSize: 10, color: '#fff'}}>Pcs</Text>
@@ -1587,6 +1779,87 @@ const StokOpnameScreen = ({navigation}) => {
             <Text style={styles.syncNote}>
               Jangan tutup aplikasi selama proses berjalan
             </Text>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={isCompareModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setIsCompareModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.detailPopupContent, {height: '80%'}]}>
+            <View style={styles.detailPopupHeader}>
+              <View>
+                <Text style={styles.modalTitle}>{compareTitle}</Text>
+                <Text
+                  style={{fontSize: 11, color: '#D32F2F', fontWeight: 'bold'}}>
+                  Hanya menampilkan item yang selisih/mismatch!
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsCompareModalVisible(false)}
+                style={styles.btnCloseCircle}>
+                <Icon name="x" size={20} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            {mismatchResults.length === 0 ? (
+              <View style={{padding: 40, alignItems: 'center'}}>
+                <Icon name="check-circle" size={50} color="#4CAF50" />
+                <Text style={{marginTop: 10, color: '#666'}}>
+                  Data 100% MATCH. Tidak ada selisih.
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={mismatchResults}
+                keyExtractor={it => it.barcode}
+                renderItem={({item}) => (
+                  <View style={styles.detailItemRow}>
+                    <View style={{flex: 1}}>
+                      <Text style={styles.detailItemName}>{item.nama}</Text>
+                      <Text style={styles.detailItemSub}>{item.barcode}</Text>
+                    </View>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        gap: 10,
+                        alignItems: 'center',
+                      }}>
+                      <View style={{alignItems: 'center'}}>
+                        <Text style={{fontSize: 10, color: '#666'}}>HP</Text>
+                        <Text style={{fontWeight: 'bold'}}>{item.lokal}</Text>
+                      </View>
+                      <View style={{alignItems: 'center'}}>
+                        <Text style={{fontSize: 10, color: '#666'}}>
+                          Server
+                        </Text>
+                        <Text style={{fontWeight: 'bold', color: '#1976D2'}}>
+                          {item.server}
+                        </Text>
+                      </View>
+                      <View
+                        style={{
+                          alignItems: 'center',
+                          backgroundColor: '#FFEBEE',
+                          padding: 5,
+                          borderRadius: 5,
+                          minWidth: 40,
+                        }}>
+                        <Text style={{fontSize: 10, color: '#D32F2F'}}>
+                          Selisih
+                        </Text>
+                        <Text style={{fontWeight: 'bold', color: '#D32F2F'}}>
+                          {item.selisih > 0 ? `+${item.selisih}` : item.selisih}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+              />
+            )}
           </View>
         </View>
       </Modal>

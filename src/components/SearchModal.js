@@ -32,7 +32,9 @@ const SearchModal = ({
   // fetch data dari API
   const fetchData = useCallback(
     async (term, pageNum, isNewSearch) => {
-      if (isFetching.current || (pageNum > 1 && !hasMoreRef.current)) return;
+      if (isFetching.current || (pageNum > 1 && !hasMoreRef.current)) {
+        return;
+      }
 
       isFetching.current = true;
       setIsLoading(true);
@@ -82,7 +84,9 @@ const SearchModal = ({
 
   // Cari ulang saat searchText berubah
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      return;
+    }
 
     const handler = setTimeout(() => {
       setPage(1);
@@ -94,7 +98,9 @@ const SearchModal = ({
   }, [searchText, visible, fetchData]);
 
   const handleLoadMore = () => {
-    if (!hasMore || isLoading) return;
+    if (!hasMore || isLoading) {
+      return;
+    }
     const newPage = page + 1;
     setPage(newPage);
     fetchData(searchText, newPage, false);
@@ -106,8 +112,10 @@ const SearchModal = ({
   };
 
   const renderFooter = () => {
-    if (!isLoading || page === 1) return null;
-    return <ActivityIndicator style={{marginVertical: 20}} />;
+    if (!isLoading || page === 1) {
+      return null;
+    }
+    return <ActivityIndicator style={styles.loading} />;
   };
 
   return (
@@ -128,7 +136,7 @@ const SearchModal = ({
           />
           <TextInput
             style={styles.searchInput}
-            placeholder={`Cari berdasarkan kode atau nama...`}
+            placeholder="Cari berdasarkan kode atau nama..."
             value={searchText}
             onChangeText={setSearchText}
             placeholderTextColor="#BDBDBD"
@@ -211,6 +219,9 @@ const styles = StyleSheet.create({
     marginTop: 40,
     color: '#757575',
     fontSize: 16,
+  },
+  loading: {
+    marginVertical: 20,
   },
 });
 

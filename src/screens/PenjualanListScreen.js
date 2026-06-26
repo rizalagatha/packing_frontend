@@ -79,7 +79,9 @@ const PenjualanListScreen = ({navigation}) => {
   // --- FUNGSI FETCH DATA ---
   const fetchInvoices = useCallback(
     async (targetPage = 1, isRefresh = false) => {
-      if (!isRefresh && (isLoadingMore || !hasMore)) return;
+      if (!isRefresh && (isLoadingMore || !hasMore)) {
+        return;
+      }
 
       if (targetPage === 1) {
         setIsLoading(true);
@@ -200,15 +202,21 @@ const PenjualanListScreen = ({navigation}) => {
   // --- Handle Struk ---
   const handleShowStruk = async (invoiceOverride = null) => {
     const targetInvoice = invoiceOverride || selectedInvoice;
-    if (!targetInvoice) return;
-    if (invoiceOverride) setSelectedInvoice(invoiceOverride);
+    if (!targetInvoice) {
+      return;
+    }
+    if (invoiceOverride) {
+      setSelectedInvoice(invoiceOverride);
+    }
 
     // Jika modal detail sedang terbuka, tutup dulu (opsional, tergantung UX)
     // setModalVisible(false);
 
-    if (!modalVisible)
+    if (!modalVisible) {
       Toast.show({type: 'info', text1: 'Memuat data struk...'});
-    else setIsLoadingDetail(true);
+    } else {
+      setIsLoadingDetail(true);
+    }
 
     try {
       const response = await getPrintDataApi(targetInvoice.Nomor, userToken);
@@ -349,7 +357,9 @@ const PenjualanListScreen = ({navigation}) => {
 
   // --- FOOTER ---
   const renderFooter = () => {
-    if (invoices.length === 0 && isLoading) return null;
+    if (invoices.length === 0 && isLoading) {
+      return null;
+    }
     if (isLoadingMore) {
       return (
         <View style={styles.footerLoader}>

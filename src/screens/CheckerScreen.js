@@ -1,11 +1,4 @@
-import React, {
-  useState,
-  useContext,
-  useMemo,
-  useRef,
-  useCallback,
-  useLayoutEffect,
-} from 'react';
+import React, {useState, useContext, useMemo, useRef} from 'react';
 import {
   View,
   Text,
@@ -61,13 +54,15 @@ const CheckerScreen = ({navigation}) => {
       const soundName = type === 'success' ? 'beep_success' : 'beep_error';
       SoundPlayer.playSoundFile(soundName, 'mp3');
     } catch (e) {
-      console.log(`Tidak bisa memutar suara`, e);
+      console.log('Tidak bisa memutar suara', e);
     }
   };
 
   // Hitung total selisih
   const totalSelisih = useMemo(() => {
-    if (items.length === 0) return -1; // Status awal, anggap ada selisih
+    if (items.length === 0) {
+      return -1;
+    } // Status awal, anggap ada selisih
     return items.reduce(
       (sum, item) => sum + (item.jumlahKirim - item.jumlahScan),
       0,
@@ -76,7 +71,9 @@ const CheckerScreen = ({navigation}) => {
 
   // Fungsi untuk memuat data STBJ
   const handleLoadStbj = async () => {
-    if (!stbjNomor) return;
+    if (!stbjNomor) {
+      return;
+    }
     setIsLoading(true);
     setItems([]);
     try {
@@ -97,7 +94,9 @@ const CheckerScreen = ({navigation}) => {
 
   // Fungsi baru untuk scan NOMOR PACKING
   const handlePackingScan = async () => {
-    if (!scannedPacking) return;
+    if (!scannedPacking) {
+      return;
+    }
 
     try {
       const cleanPackingNumber = scannedPacking.trim().toUpperCase();
@@ -250,7 +249,7 @@ const CheckerScreen = ({navigation}) => {
           <Text
             style={[
               styles.qtyLabel,
-              {color: !isMatched ? '#D32F2F' : '#4CAF50'},
+              isMatched ? styles.qtyMatched : styles.qtyNotMatched,
             ]}>
             Selisih: {selisih}
           </Text>
@@ -303,7 +302,11 @@ const CheckerScreen = ({navigation}) => {
       </View>
 
       {isLoading ? (
-        <ActivityIndicator size="large" color="#D32F2F" style={{flex: 1}} />
+        <ActivityIndicator
+          size="large"
+          color="#D32F2F"
+          style={styles.loading}
+        />
       ) : (
         <FlatList
           data={items}
@@ -450,6 +453,17 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {backgroundColor: '#BDBDBD'},
   buttonText: {color: '#fff', fontWeight: 'bold', fontSize: 16},
+  qtyMatched: {
+    color: '#4CAF50',
+  },
+
+  qtyNotMatched: {
+    color: '#D32F2F',
+  },
+
+  loading: {
+    flex: 1,
+  },
 });
 
 export default CheckerScreen;

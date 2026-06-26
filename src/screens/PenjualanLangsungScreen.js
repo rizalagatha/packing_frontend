@@ -129,7 +129,9 @@ const PenjualanLangsungScreen = ({navigation}) => {
       try {
         // Load Customer
         const custRes = await getDefaultCustomerApi(userToken);
-        if (custRes.data.data) setCustomer(custRes.data.data);
+        if (custRes.data.data) {
+          setCustomer(custRes.data.data);
+        }
 
         // Load Promos
         const today = new Date().toISOString().split('T')[0];
@@ -168,7 +170,9 @@ const PenjualanLangsungScreen = ({navigation}) => {
 
   // 2. Logic Scan
   const handleScan = async () => {
-    if (!scannedValue) return;
+    if (!scannedValue) {
+      return;
+    }
     const barcode = scannedValue;
     setScannedValue('');
 
@@ -265,8 +269,9 @@ const PenjualanLangsungScreen = ({navigation}) => {
         });
       } finally {
         // Loading dimatikan di dalam blok if/else di atas atau saat catch
-        if (items.findIndex(i => i.barcode === barcode) === -1)
+        if (items.findIndex(i => i.barcode === barcode) === -1) {
           setIsLoading(false);
+        }
       }
     }
     setTimeout(() => scannerInputRef.current?.focus(), 100);
@@ -367,7 +372,9 @@ const PenjualanLangsungScreen = ({navigation}) => {
 
   // -> FUNGSI GANTI MODE
   const handleToggleMode = modeIsBazaar => {
-    if (isBazaarMode === modeIsBazaar) return; // Jika mode sama, abaikan
+    if (isBazaarMode === modeIsBazaar) {
+      return;
+    } // Jika mode sama, abaikan
 
     if (items.length > 0) {
       Alert.alert(
@@ -470,12 +477,13 @@ const PenjualanLangsungScreen = ({navigation}) => {
 
   // 4. Simpan Transaksi
   const handleSave = async () => {
-    if (!customer)
+    if (!customer) {
       return Toast.show({
         type: 'error',
         text1: 'Error',
         text2: 'Customer belum dipilih.',
       });
+    }
 
     const nilaiTransfer = parseInt(transfer) || 0;
     const nilaiQris = parseInt(qris) || 0;

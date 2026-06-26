@@ -129,9 +129,7 @@ const LinkWhatsappScreen = () => {
       return (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#D32F2F" />
-          <Text style={{marginTop: 10, color: '#666'}}>
-            Memeriksa status WhatsApp...
-          </Text>
+          <Text style={styles.loadingText}>Memeriksa status WhatsApp...</Text>
         </View>
       );
     }
@@ -161,7 +159,7 @@ const LinkWhatsappScreen = () => {
           )}
 
           <TouchableOpacity
-            style={[styles.deleteButton, {marginTop: 30, width: '100%'}]}
+            style={[styles.deleteButton, styles.deleteButtonFull]}
             onPress={handleDeleteSession}
             disabled={isActionLoading}>
             {isActionLoading ? (
@@ -172,7 +170,7 @@ const LinkWhatsappScreen = () => {
                   name="log-out"
                   size={20}
                   color="#D32F2F"
-                  style={{marginRight: 8}}
+                  style={styles.iconRight8}
                 />
                 <Text style={styles.deleteButtonText}>Putuskan Tautan</Text>
               </>
@@ -207,7 +205,7 @@ const LinkWhatsappScreen = () => {
                     name="aperture"
                     size={20}
                     color="#FFFFFF"
-                    style={{marginRight: 10}}
+                    style={styles.iconRight10}
                   />
                   <Text style={styles.buttonText}>Dapatkan QR Code</Text>
                 </>
@@ -233,19 +231,17 @@ const LinkWhatsappScreen = () => {
             <Text style={styles.qrText}>Menunggu scan...</Text>
 
             {/* Tombol Batalkan / Generate Ulang */}
-            <View style={{flexDirection: 'row', gap: 20, marginTop: 20}}>
+            <View style={styles.qrButtonContainer}>
               <TouchableOpacity
                 onPress={() => setQrCode('')}
-                style={{padding: 10}}>
-                <Text style={{color: '#D32F2F', fontWeight: 'bold'}}>
-                  Batalkan
-                </Text>
+                style={styles.actionButton}>
+                <Text style={styles.cancelText}>Batalkan</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={handleGetQr} style={{padding: 10}}>
-                <Text style={{color: '#1976D2', fontWeight: 'bold'}}>
-                  Refresh QR
-                </Text>
+              <TouchableOpacity
+                onPress={handleGetQr}
+                style={styles.actionButton}>
+                <Text style={styles.refreshText}>Refresh QR</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -353,6 +349,43 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFEBEE',
   },
   deleteButtonText: {color: '#D32F2F', fontSize: 14, fontWeight: '600'},
+  loadingText: {
+    marginTop: 10,
+    color: '#666',
+  },
+
+  deleteButtonFull: {
+    marginTop: 30,
+    width: '100%',
+  },
+
+  iconRight8: {
+    marginRight: 8,
+  },
+
+  iconRight10: {
+    marginRight: 10,
+  },
+
+  qrButtonContainer: {
+    flexDirection: 'row',
+    gap: 20,
+    marginTop: 20,
+  },
+
+  actionButton: {
+    padding: 10,
+  },
+
+  cancelText: {
+    color: '#D32F2F',
+    fontWeight: 'bold',
+  },
+
+  refreshText: {
+    color: '#1976D2',
+    fontWeight: 'bold',
+  },
 });
 
 export default LinkWhatsappScreen;

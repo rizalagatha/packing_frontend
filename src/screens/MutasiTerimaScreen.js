@@ -59,7 +59,7 @@ const MutasiTerimaScreen = ({navigation}) => {
       const soundName = type === 'success' ? 'beep_success' : 'beep_error';
       SoundPlayer.playSoundFile(soundName, 'mp3');
     } catch (e) {
-      console.log(`Tidak bisa memutar suara`, e);
+      console.log('Tidak bisa memutar suara', e);
     }
   };
 
@@ -112,7 +112,9 @@ const MutasiTerimaScreen = ({navigation}) => {
   );
 
   const handleBarcodeScan = () => {
-    if (!scannedBarcode) return;
+    if (!scannedBarcode) {
+      return;
+    }
     const barcode = scannedBarcode;
     const itemIndex = items.findIndex(item => item.barcode === barcode);
     if (itemIndex > -1) {

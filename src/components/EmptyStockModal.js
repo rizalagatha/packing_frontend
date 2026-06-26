@@ -70,10 +70,10 @@ const EmptyStockModal = ({
             </TouchableOpacity>
           </View>
 
-          <View style={{flex: 1, paddingHorizontal: 16, paddingTop: 10}}>
+          <View style={styles.contentContainer}>
             {/* Filter Cabang (Hanya KDC) */}
             {userBranch === 'KDC' && (
-              <View style={{marginBottom: 12, height: 45}}>
+              <View style={styles.branchContainer}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   {branchList.map((cab, index) => {
                     // Pastikan properti kode sesuai dengan data API cabang kamu
@@ -105,19 +105,19 @@ const EmptyStockModal = ({
                 name="search"
                 size={18}
                 color="#888"
-                style={{marginLeft: 10}}
+                style={styles.searchIcon}
               />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Cari Barang..."
                 value={searchText}
                 onChangeText={setSearchText}
-                onSubmitEditing={handleSearchSubmit} // <--- Panggil handler ini
+                onSubmitEditing={handleSearchSubmit}
                 returnKeyType="search"
               />
               <TouchableOpacity
-                onPress={handleSearchSubmit} // <--- Panggil handler ini
-                style={{padding: 5}}>
+                onPress={handleSearchSubmit}
+                style={styles.searchButton}>
                 <Icon name="arrow-right" size={20} color="#1976D2" />
               </TouchableOpacity>
             </View>
@@ -127,7 +127,7 @@ const EmptyStockModal = ({
               <ActivityIndicator
                 size="large"
                 color="#1976D2"
-                style={{marginTop: 40}}
+                style={styles.loading}
               />
             ) : (
               <FlatList
@@ -135,10 +135,9 @@ const EmptyStockModal = ({
                 keyExtractor={(item, i) =>
                   (item.kode || i.toString()) + item.ukuran
                 }
-                contentContainerStyle={{paddingBottom: 20, paddingTop: 10}}
+                contentContainerStyle={styles.listContent}
                 ListEmptyComponent={
-                  <Text
-                    style={{textAlign: 'center', marginTop: 30, color: '#999'}}>
+                  <Text style={styles.emptyText}>
                     Tidak ada data stok kosong.
                   </Text>
                 }
@@ -146,7 +145,7 @@ const EmptyStockModal = ({
                   <TouchableOpacity
                     style={styles.itemRow}
                     onPress={() => onItemPress && onItemPress(item)}>
-                    <View style={{flex: 1}}>
+                    <View style={styles.itemContent}>
                       <Text style={styles.itemName}>{item.nama_barang}</Text>
                       <Text style={styles.itemSub}>
                         {item.ukuran} • {item.kode}
@@ -223,6 +222,43 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   badgeText: {color: '#D32F2F', fontSize: 10, fontWeight: 'bold'},
+  contentContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+  },
+
+  branchContainer: {
+    marginBottom: 12,
+    height: 45,
+  },
+
+  searchIcon: {
+    marginLeft: 10,
+  },
+
+  searchButton: {
+    padding: 5,
+  },
+
+  loading: {
+    marginTop: 40,
+  },
+
+  listContent: {
+    paddingTop: 10,
+    paddingBottom: 20,
+  },
+
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 30,
+    color: '#999',
+  },
+
+  itemContent: {
+    flex: 1,
+  },
 });
 
 export default EmptyStockModal;

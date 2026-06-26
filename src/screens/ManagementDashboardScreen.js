@@ -61,7 +61,9 @@ const formatRupiah = angka => {
   const numberValue = Number(angka);
 
   // 2. Cek validasi, jika bukan angka kembalikan Rp 0
-  if (isNaN(numberValue)) return 'Rp 0';
+  if (isNaN(numberValue)) {
+    return 'Rp 0';
+  }
 
   // 3. Lakukan Pembulatan (Math.round)
   // Ini akan membulatkan 990,33 -> 990 | 990,80 -> 991
@@ -183,7 +185,7 @@ const AuthItem = React.memo(
                 name="file-text"
                 size={12}
                 color="#555"
-                style={{marginRight: 4}}
+                style={styles.marginRight4}
               />
               <Text style={styles.authTrxText}>{item.o_transaksi}</Text>
             </View>
@@ -201,7 +203,7 @@ const AuthItem = React.memo(
                 name="maximize"
                 size={12}
                 color="#555"
-                style={{marginRight: 4}}
+                style={styles.marginRight4}
               />
               <Text style={{fontSize: 12, color: '#555'}}>
                 {item.o_barcode}
@@ -295,7 +297,7 @@ const BranchGroup = React.memo(
               name={isExpanded ? 'chevron-up' : 'chevron-down'}
               size={20}
               color="#666"
-              style={{marginLeft: 10}}
+              style={styles.marginLeft10}
             />
           </View>
         </TouchableOpacity>
@@ -420,7 +422,7 @@ const BranchSelectorModal = ({
                         {kode}
                       </Text>
                     </View>
-                    <View style={{marginLeft: 12}}>
+                    <View style={styles.marginLeft12}>
                       <Text
                         style={[
                           styles.branchOptionText,
@@ -612,16 +614,24 @@ const ManagementDashboardScreen = ({navigation}) => {
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gestureState) => {
         // Gunakan showSidebar agar Estu bisa swipe
-        if (!showSidebar) return false;
+        if (!showSidebar) {
+          return false;
+        }
 
         const {dx, moveX} = gestureState;
-        if (!isDrawerOpen && moveX < 40 && dx > 10) return true;
-        if (isDrawerOpen && dx < -10) return true;
+        if (!isDrawerOpen && moveX < 40 && dx > 10) {
+          return true;
+        }
+        if (isDrawerOpen && dx < -10) {
+          return true;
+        }
         return false;
       },
       onPanResponderGrant: () => {
         // Saat sentuhan dimulai, kita set state open agar view ter-render
-        if (!isDrawerOpen) setIsDrawerOpen(true);
+        if (!isDrawerOpen) {
+          setIsDrawerOpen(true);
+        }
       },
       onPanResponderMove: (_, gestureState) => {
         const {dx} = gestureState;
@@ -631,8 +641,12 @@ const ManagementDashboardScreen = ({navigation}) => {
         let newPos = isDrawerOpen ? dx : -DRAWER_WIDTH + dx;
 
         // Batasi posisi agar tidak lewat batas
-        if (newPos > 0) newPos = 0;
-        if (newPos < -DRAWER_WIDTH) newPos = -DRAWER_WIDTH;
+        if (newPos > 0) {
+          newPos = 0;
+        }
+        if (newPos < -DRAWER_WIDTH) {
+          newPos = -DRAWER_WIDTH;
+        }
 
         drawerTranslateX.setValue(newPos);
       },
@@ -647,8 +661,11 @@ const ManagementDashboardScreen = ({navigation}) => {
           closeDrawer(); // Snap tutup
         } else {
           // Jika nanggung, kembalikan ke kondisi semula
-          if (isDrawerOpen) openDrawer();
-          else closeDrawer();
+          if (isDrawerOpen) {
+            openDrawer();
+          } else {
+            closeDrawer();
+          }
         }
       },
     }),
@@ -694,7 +711,9 @@ const ManagementDashboardScreen = ({navigation}) => {
         }
       } catch (error) {
         console.log('Err Stats:', error.message);
-        if (isMounted.current) setLoadingStats(false);
+        if (isMounted.current) {
+          setLoadingStats(false);
+        }
       }
     },
     [userToken],
@@ -711,7 +730,9 @@ const ManagementDashboardScreen = ({navigation}) => {
         }
       } catch (error) {
         console.log('Err Piutang:', error.message);
-        if (isMounted.current) setLoadingPiutang(false);
+        if (isMounted.current) {
+          setLoadingPiutang(false);
+        }
       }
     },
     [userToken],
@@ -719,7 +740,9 @@ const ManagementDashboardScreen = ({navigation}) => {
 
   const fetchPiutangList = useCallback(async () => {
     if (userInfo.cabang !== 'KDC') {
-      if (isMounted.current) setLoadingPiutangList(false);
+      if (isMounted.current) {
+        setLoadingPiutangList(false);
+      }
       return;
     }
     try {
@@ -730,7 +753,9 @@ const ManagementDashboardScreen = ({navigation}) => {
       }
     } catch (error) {
       console.log('Err Piutang List:', error.message);
-      if (isMounted.current) setLoadingPiutangList(false);
+      if (isMounted.current) {
+        setLoadingPiutangList(false);
+      }
     }
   }, [userToken, userInfo.cabang]);
 
@@ -751,7 +776,9 @@ const ManagementDashboardScreen = ({navigation}) => {
     } catch (error) {
       console.log('Err Detail Piutang:', error.message);
     } finally {
-      if (isMounted.current) setLoadingDetail(false);
+      if (isMounted.current) {
+        setLoadingDetail(false);
+      }
     }
   };
 
@@ -787,7 +814,9 @@ const ManagementDashboardScreen = ({navigation}) => {
           setLoadingChart(false);
         }
       } catch (e) {
-        if (isMounted.current) setLoadingChart(false);
+        if (isMounted.current) {
+          setLoadingChart(false);
+        }
       }
     },
     [userToken], // Dependency aman
@@ -807,7 +836,9 @@ const ManagementDashboardScreen = ({navigation}) => {
         }
       } catch (error) {
         console.log('Err Target:', error.message);
-        if (isMounted.current) setLoadingTarget(false);
+        if (isMounted.current) {
+          setLoadingTarget(false);
+        }
       }
     },
     [userToken],
@@ -815,7 +846,9 @@ const ManagementDashboardScreen = ({navigation}) => {
 
   const fetchBranchPerformance = useCallback(async () => {
     if (userInfo.cabang !== 'KDC') {
-      if (isMounted.current) setLoadingBranch(false);
+      if (isMounted.current) {
+        setLoadingBranch(false);
+      }
       return;
     }
     try {
@@ -826,7 +859,9 @@ const ManagementDashboardScreen = ({navigation}) => {
       }
     } catch (error) {
       console.log('Err Branch:', error.message);
-      if (isMounted.current) setLoadingBranch(false);
+      if (isMounted.current) {
+        setLoadingBranch(false);
+      }
     }
   }, [userToken, userInfo.cabang]);
 
@@ -880,7 +915,9 @@ const ManagementDashboardScreen = ({navigation}) => {
         }
       } catch (error) {
         console.log('Err Negative Stock:', error);
-        if (isMounted.current) setLoadingNegativeStock(false);
+        if (isMounted.current) {
+          setLoadingNegativeStock(false);
+        }
       }
     },
     [userToken, userInfo.cabang],
@@ -939,7 +976,9 @@ const ManagementDashboardScreen = ({navigation}) => {
                 'Tidak bisa akses Port 8000. Cek Firewall Server.',
               );
             }
-            if (isMounted.current) setLoadingBranch(false);
+            if (isMounted.current) {
+              setLoadingBranch(false);
+            }
           });
       }
 
@@ -1107,7 +1146,9 @@ const ManagementDashboardScreen = ({navigation}) => {
         }
       }
     } finally {
-      if (isMounted.current) setLoadingAuth(false);
+      if (isMounted.current) {
+        setLoadingAuth(false);
+      }
     }
   }, [userToken]);
 
@@ -1129,7 +1170,9 @@ const ManagementDashboardScreen = ({navigation}) => {
       console.log('Error Load Visitor:', e);
       ToastAndroid.show('Gagal memuat detail visitor', ToastAndroid.SHORT);
     } finally {
-      if (isMounted.current) setLoadingVisitor(false);
+      if (isMounted.current) {
+        setLoadingVisitor(false);
+      }
     }
   };
 
@@ -1153,14 +1196,18 @@ const ManagementDashboardScreen = ({navigation}) => {
     branchList.forEach(cab => {
       const kode = cab.gdg_kode || cab.kode;
       const nama = cab.gdg_nama || cab.nama;
-      if (kode) map[kode] = nama;
+      if (kode) {
+        map[kode] = nama;
+      }
     });
     return map;
   }, [branchList]);
 
   // [BARU] Logic Pengelompokan Data per Cabang
   const groupedAuthList = useMemo(() => {
-    if (!authList.length) return [];
+    if (!authList.length) {
+      return [];
+    }
 
     const groups = {};
     authList.forEach(item => {
@@ -1207,7 +1254,9 @@ const ManagementDashboardScreen = ({navigation}) => {
           error.response?.data?.message || 'Gagal memproses otorisasi';
         Alert.alert('Gagal', msg);
       } finally {
-        if (isMounted.current) setProcessingAuth(null);
+        if (isMounted.current) {
+          setProcessingAuth(null);
+        }
       }
     },
     [userToken],
@@ -1225,7 +1274,9 @@ const ManagementDashboardScreen = ({navigation}) => {
         }
       } catch (error) {
         console.log('Err Top Products:', error.message);
-        if (isMounted.current) setLoadingTopProducts(false);
+        if (isMounted.current) {
+          setLoadingTopProducts(false);
+        }
       }
     },
     [userToken],
@@ -1251,7 +1302,9 @@ const ManagementDashboardScreen = ({navigation}) => {
     } catch (error) {
       Alert.alert('Gagal', 'Gagal memuat data stok.');
     } finally {
-      if (isMounted.current) setLoadingStockSpread(false);
+      if (isMounted.current) {
+        setLoadingStockSpread(false);
+      }
     }
   };
 
@@ -1269,11 +1322,15 @@ const ManagementDashboardScreen = ({navigation}) => {
         item.UKURAN,
         userToken,
       );
-      if (isMounted.current) setStockSpreadList(res.data.data || []);
+      if (isMounted.current) {
+        setStockSpreadList(res.data.data || []);
+      }
     } catch (error) {
       console.log('Err Sales Spread:', error);
     } finally {
-      if (isMounted.current) setLoadingStockSpread(false);
+      if (isMounted.current) {
+        setLoadingStockSpread(false);
+      }
     }
   };
 
@@ -1292,11 +1349,15 @@ const ManagementDashboardScreen = ({navigation}) => {
         item.ukuran || item.UKURAN,
         userToken,
       );
-      if (isMounted.current) setStockSpreadList(res.data.data || []);
+      if (isMounted.current) {
+        setStockSpreadList(res.data.data || []);
+      }
     } catch (error) {
       console.log('Err Stock Spread:', error);
     } finally {
-      if (isMounted.current) setLoadingStockSpread(false);
+      if (isMounted.current) {
+        setLoadingStockSpread(false);
+      }
     }
   };
 
@@ -1311,7 +1372,9 @@ const ManagementDashboardScreen = ({navigation}) => {
         }
       } catch (error) {
         console.log('Err Trends:', error.message);
-        if (isMounted.current) setLoadingTrends(false);
+        if (isMounted.current) {
+          setLoadingTrends(false);
+        }
       }
     },
     [userToken],
@@ -1331,11 +1394,15 @@ const ManagementDashboardScreen = ({navigation}) => {
         // console.log(`Fetching Empty Stock...`);
 
         const res = await getEmptyStockRegulerApi(userToken, search, target);
-        if (isMounted.current) setEmptyStockList(res.data.data || []);
+        if (isMounted.current) {
+          setEmptyStockList(res.data.data || []);
+        }
       } catch (error) {
         console.log('Err Empty Stock:', error);
       } finally {
-        if (isMounted.current) setLoadingEmptyStock(false);
+        if (isMounted.current) {
+          setLoadingEmptyStock(false);
+        }
       }
     },
     [userToken, userInfo.cabang],
@@ -1357,7 +1424,7 @@ const ManagementDashboardScreen = ({navigation}) => {
   const renderHeader = () => (
     <LinearGradient colors={['#1565C0', '#42A5F5']} style={styles.headerCard}>
       <View style={styles.headerTop}>
-        <View style={{flex: 1}}>
+        <View style={styles.flex1}>
           <Text style={styles.greetingText}>Halo, {userInfo.nama}</Text>
           <Text style={styles.subGreeting}>
             {userInfo.cabang === 'KDC' ? 'Head Office' : userInfo.cabang}
@@ -1429,7 +1496,9 @@ const ManagementDashboardScreen = ({navigation}) => {
   );
 
   const renderPiutangSection = () => {
-    if (userInfo.cabang !== 'KDC') return null;
+    if (userInfo.cabang !== 'KDC') {
+      return null;
+    }
     const isFiltered = dashboardBranchFilter !== 'ALL';
     return (
       <View style={styles.sectionContainer}>
@@ -1452,7 +1521,7 @@ const ManagementDashboardScreen = ({navigation}) => {
               <View style={[styles.iconBox, {backgroundColor: '#FFF3E0'}]}>
                 <Icon name="clock" size={20} color="#F57C00" />
               </View>
-              <View style={{flex: 1}}>
+              <View style={styles.flex1}>
                 <Text style={styles.cardTitle}>Total Piutang Berjalan</Text>
                 <Text style={styles.cardSubtitle}>
                   {isFiltered
@@ -1599,7 +1668,9 @@ const ManagementDashboardScreen = ({navigation}) => {
   };
 
   const renderBranchRanking = () => {
-    if (userInfo.cabang !== 'KDC') return null;
+    if (userInfo.cabang !== 'KDC') {
+      return null;
+    }
     return (
       <View style={styles.sectionContainer}>
         <Text style={styles.sectionTitle}>Performa Cabang</Text>
@@ -1750,8 +1821,9 @@ const ManagementDashboardScreen = ({navigation}) => {
 
   // Helper render baris progress (FIXED KEY WARNING)
   const renderTrendBar = (items, colorBase) => {
-    if (!items || items.length === 0)
+    if (!items || items.length === 0) {
       return <Text style={{fontSize: 12, color: '#999'}}>Tidak ada data.</Text>;
+    }
 
     const topTotal = items.reduce(
       (sum, item) => sum + Number(item.total_qty),
@@ -1922,7 +1994,7 @@ const ManagementDashboardScreen = ({navigation}) => {
             name="alert-triangle"
             size={18}
             color="#D32F2F"
-            style={{marginRight: 8}}
+            style={styles.marginRight8}
           />
           <Text style={styles.sectionTitleWithoutMargin}>
             Stok Minus (Perhatian)
@@ -2047,7 +2119,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                   name="map-pin"
                   size={14}
                   color="#1565C0"
-                  style={{marginRight: 6}}
+                  style={styles.marginRight6}
                 />
                 <Text style={styles.branchDropdownText}>
                   {dashboardBranchFilter === 'ALL'
@@ -2058,7 +2130,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                   name="chevron-down"
                   size={16}
                   color="#1565C0"
-                  style={{marginLeft: 4}}
+                  style={styles.marginLeft4}
                 />
               </TouchableOpacity>
             </View>
@@ -2095,7 +2167,7 @@ const ManagementDashboardScreen = ({navigation}) => {
               styles.drawerContainer,
               {transform: [{translateX: drawerTranslateX}]},
             ]}>
-            <View style={{flex: 1}}>
+            <View style={styles.flex1}>
               <View style={styles.drawerHeader}>
                 <View style={styles.drawerAvatar}>
                   <Text style={styles.avatarText}>
@@ -2114,7 +2186,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                 </View>
               </View>
 
-              <View style={{marginTop: 20}}>
+              <View style={styles.marginTop20}>
                 <Text style={styles.drawerSectionTitle}>Aplikasi</Text>
 
                 {/* MENU OTORISASI: Hanya muncul jika canAuthorize = true (Haris/Darul) */}
@@ -2130,7 +2202,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                       name="check-circle" // Changed icon to match 'Approval'
                       size={20}
                       color="#546E7A"
-                      style={{marginRight: 15}}
+                      style={styles.marginRight15}
                     />
                     <Text style={styles.drawerItemText}>
                       Otorisasi (Approval)
@@ -2149,14 +2221,16 @@ const ManagementDashboardScreen = ({navigation}) => {
                     name="alert-octagon"
                     size={20}
                     color="#546E7A"
-                    style={{marginRight: 15}}
+                    style={styles.marginRight15}
                   />
                   <Text style={styles.drawerItemText}>Laporan Stok Kosong</Text>
                 </TouchableOpacity>
 
-                {/* --- MENU STOK OPNAME (KHUSUS RIO) --- */}
+                {/* --- MENU STOK OPNAME (KHUSUS RIO & ADMIN) --- */}
                 {(userInfo?.kode === 'RIO' ||
-                  userInfo?.nama?.toUpperCase().includes('RIO')) && (
+                  userInfo?.nama?.toUpperCase().includes('RIO') ||
+                  userInfo?.nama?.toUpperCase().includes('ADMIN') ||
+                  userInfo?.kode === 'ADMIN') && (
                   <TouchableOpacity
                     style={styles.drawerItem}
                     onPress={() => {
@@ -2167,7 +2241,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                       name="clipboard"
                       size={20}
                       color="#546E7A"
-                      style={{marginRight: 15}}
+                      style={styles.marginRight15}
                     />
                     <Text style={styles.drawerItemText}>Stok Opname</Text>
                   </TouchableOpacity>
@@ -2181,7 +2255,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                   name="log-out"
                   size={20}
                   color="#D32F2F"
-                  style={{marginRight: 10}}
+                  style={styles.marginRight10}
                 />
                 <Text style={[styles.drawerItemText, {color: '#D32F2F'}]}>
                   Keluar
@@ -2217,7 +2291,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                   {/* Refresh Button */}
                   <TouchableOpacity
                     onPress={fetchPendingAuth}
-                    style={{marginRight: 15}}>
+                    style={styles.marginRight15}>
                     <Icon name="refresh-cw" size={20} color="#1976D2" />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => setOtorisasiVisible(false)}>
@@ -2277,7 +2351,7 @@ const ManagementDashboardScreen = ({navigation}) => {
               <ActivityIndicator
                 size="large"
                 color="#1976D2"
-                style={{marginTop: 20}}
+                style={styles.marginTop20}
               />
             ) : (
               <FlatList
@@ -2329,7 +2403,7 @@ const ManagementDashboardScreen = ({navigation}) => {
               <ActivityIndicator
                 size="large"
                 color="#1976D2"
-                style={{marginTop: 20}}
+                style={styles.marginTop20}
               />
             ) : (
               <FlatList
@@ -2378,7 +2452,7 @@ const ManagementDashboardScreen = ({navigation}) => {
           <View
             style={[styles.modalContent, {height: 'auto', maxHeight: '60%'}]}>
             <View style={styles.modalHeader}>
-              <View style={{flex: 1}}>
+              <View style={styles.flex1}>
                 {/* JUDUL DINAMIS */}
                 <Text style={styles.modalTitle}>
                   {modalType === 'SALES'
@@ -2422,7 +2496,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                           name="map-pin"
                           size={14}
                           color={modalType === 'SALES' ? '#2E7D32' : '#1976D2'}
-                          style={{marginRight: 8}}
+                          style={styles.marginRight8}
                         />
                         <Text style={styles.stockBranchName}>
                           {stok.nama_cabang || stok.cabang}
@@ -3272,6 +3346,335 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
     alignItems: 'center',
+  },
+  flex1: {
+    flex: 1,
+  },
+
+  flexRow: {
+    flexDirection: 'row',
+  },
+
+  flexRowCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  flexRowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  alignCenter: {
+    alignItems: 'center',
+  },
+
+  alignEnd: {
+    alignItems: 'flex-end',
+  },
+
+  textCenter: {
+    textAlign: 'center',
+  },
+
+  marginTop4: {
+    marginTop: 4,
+  },
+
+  marginTop5: {
+    marginTop: 5,
+  },
+
+  marginTop10: {
+    marginTop: 10,
+  },
+
+  marginTop20: {
+    marginTop: 20,
+  },
+
+  marginBottom4: {
+    marginBottom: 4,
+  },
+
+  marginBottom8: {
+    marginBottom: 8,
+  },
+
+  marginBottom10: {
+    marginBottom: 10,
+  },
+
+  marginRight4: {
+    marginRight: 4,
+  },
+
+  marginRight6: {
+    marginRight: 6,
+  },
+
+  marginRight8: {
+    marginRight: 8,
+  },
+
+  marginRight10: {
+    marginRight: 10,
+  },
+
+  marginRight15: {
+    marginRight: 15,
+  },
+
+  marginLeft4: {
+    marginLeft: 4,
+  },
+
+  marginLeft8: {
+    marginLeft: 8,
+  },
+
+  marginLeft10: {
+    marginLeft: 10,
+  },
+
+  marginLeft12: {
+    marginLeft: 12,
+  },
+
+  padding0: {
+    padding: 0,
+  },
+
+  padding10: {
+    padding: 10,
+  },
+
+  padding15: {
+    padding: 15,
+  },
+
+  padding20: {
+    padding: 20,
+  },
+
+  paddingVertical10: {
+    paddingVertical: 10,
+  },
+
+  width100: {
+    width: '100%',
+  },
+
+  iconOrangeBg: {
+    backgroundColor: '#FFF3E0',
+  },
+
+  iconBlueBg: {
+    backgroundColor: '#E3F2FD',
+  },
+
+  iconGreenBg: {
+    backgroundColor: '#E0F2F1',
+  },
+
+  textDanger: {
+    color: '#D32F2F',
+  },
+
+  textWarning: {
+    color: '#E65100',
+  },
+
+  textPrimary: {
+    color: '#1976D2',
+  },
+
+  textSecondary: {
+    color: '#666',
+  },
+
+  textWhite: {
+    color: '#fff',
+  },
+
+  bold: {
+    fontWeight: 'bold',
+  },
+
+  drawerOverlay: {
+    backgroundColor: '#E0E0E0',
+    overflow: 'hidden',
+  },
+
+  height100: {
+    height: '100%',
+  },
+
+  rowCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  rowCenterMb4: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+
+  rowBetweenEnd: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: 8,
+  },
+
+  row: {
+    flexDirection: 'row',
+  },
+
+  contentPadding: {
+    padding: 20,
+  },
+
+  bgWhite: {
+    backgroundColor: '#fff',
+  },
+
+  bgBlueLight: {
+    backgroundColor: '#E3F2FD',
+  },
+
+  bgGrey: {
+    backgroundColor: '#F5F5F5',
+  },
+
+  bgOrangeLight: {
+    backgroundColor: '#FFF3E0',
+  },
+
+  bgGold: {
+    backgroundColor: '#FFD700',
+  },
+
+  bgSilver: {
+    backgroundColor: '#C0C0C0',
+  },
+
+  bgBronze: {
+    backgroundColor: '#CD7F32',
+  },
+
+  text12Grey: {
+    fontSize: 12,
+    color: '#555',
+  },
+
+  text12Secondary: {
+    fontSize: 12,
+    color: '#666',
+  },
+
+  text18Bold: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+
+  text14SemiBold: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+
+  textBlueBold: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#1565C0',
+  },
+
+  textGreen: {
+    color: '#2E7D32',
+  },
+
+  textOrange: {
+    color: '#E65100',
+  },
+
+  textOrangeMt5: {
+    color: '#E65100',
+    marginTop: 5,
+  },
+
+  textGrey: {
+    color: '#666',
+  },
+
+  textWhite80: {
+    color: 'rgba(255,255,255,0.8)',
+  },
+
+  textCenterGrey: {
+    textAlign: 'center',
+    color: '#999',
+  },
+
+  textCenterGreyP10: {
+    textAlign: 'center',
+    color: '#999',
+    padding: 10,
+  },
+
+  textRightBold: {
+    textAlign: 'right',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: 'bold',
+  },
+
+  ml10: {
+    marginLeft: 10,
+  },
+
+  ml15: {
+    marginLeft: 15,
+  },
+
+  mt4Width100: {
+    marginTop: 4,
+    width: '100%',
+  },
+
+  mt16: {
+    marginTop: 16,
+  },
+
+  mt80: {
+    marginTop: 80,
+  },
+
+  mv8Radius16: {
+    marginVertical: 8,
+    borderRadius: 16,
+  },
+
+  alignStart: {
+    alignSelf: 'flex-start',
+  },
+
+  centerMin100: {
+    minHeight: 100,
+    justifyContent: 'center',
+  },
+
+  scrollContent: {
+    padding: 0,
+    paddingVertical: 10,
+    minHeight: 220,
   },
 });
 

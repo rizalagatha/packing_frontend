@@ -12,37 +12,22 @@ import {
   loginApi,
   selectBranchApi,
   updateFcmTokenApi,
+  loginWithDeviceApi,
 } from '../api/ApiService';
 import Toast from 'react-native-toast-message';
 import {AppState} from 'react-native';
+import {jwtDecode} from 'jwt-decode';
 
 export const AuthContext = createContext();
 
 // --- FIX: Decoder Base64 yang aman untuk React Native (Tanpa atob) ---
 const decodeToken = token => {
   try {
-    if (!token) return null;
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-
-    // Menggunakan buffer internal jika ada, atau cara manual yang ringan
-    const chars =
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
-    let str = base64.replace(/=+$/, '');
-    let output = '';
-
-    if (str.length % 4 === 1) return null;
-
-    for (
-      let bc = 0, bs = 0, buffer, i = 0;
-      (buffer = str.charAt(i++));
-      ~buffer && ((bs = bc % 4 ? bs * 64 + buffer : buffer), bc++ % 4)
-        ? (output += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6))))
-        : 0
-    ) {
-      buffer = chars.indexOf(buffer);
+    if (!token) {
+      return null;
     }
-    return JSON.parse(output);
+
+    return jwtDecode(token);
   } catch (e) {
     console.error('Gagal decode token:', e);
     return null;
@@ -64,10 +49,14 @@ export const AuthProvider = ({children}) => {
   const startLogoutTimer = useCallback(
     token => {
       // Bersihkan timer lama jika ada
-      if (logoutTimer.current) clearTimeout(logoutTimer.current);
+      if (logoutTimer.current) {
+        clearTimeout(logoutTimer.current);
+      }
 
       const decoded = decodeToken(token);
-      if (!decoded || !decoded.exp) return;
+      if (!decoded || !decoded.exp) {
+        return;
+      }
 
       // Hitung sisa waktu (exp dalam detik, Date.now dalam ms)
       const expirationTime = decoded.exp * 1000;
@@ -100,7 +89,9 @@ export const AuthProvider = ({children}) => {
   // --- 1. HELPER (Dibungkus useCallback agar stabil) ---
 
   const subscribeToTopic = useCallback(async cabang => {
-    if (!cabang) return;
+    if (!cabang) {
+      return;
+    }
     const topic = `approval_${cabang}`;
     try {
       await messaging().subscribeToTopic(topic);
@@ -111,7 +102,9 @@ export const AuthProvider = ({children}) => {
   }, []);
 
   const unsubscribeFromTopic = useCallback(async cabang => {
-    if (!cabang) return;
+    if (!cabang) {
+      return;
+    }
     const topic = `approval_${cabang}`;
     try {
       await messaging().unsubscribeFromTopic(topic);
@@ -162,26 +155,55 @@ export const AuthProvider = ({children}) => {
   // --- 3. LOGIN FUNCTIONS (Sekarang aman memanggil setTokenAndInfo) ---
 
   const login = useCallback(
-    async (userKode, password) => {
-      const response = await loginApi(userKode, password);
+    async (userKode, password, latitude, longitude) => {
+      // Pastikan API service Anda juga di-update untuk menerima 4 parameter ini
+      const response = await loginApi(userKode, password, latitude, longitude);
       if (response.data.multiBranch) {
         setPreAuthToken(response.data.preAuthToken);
         setBranches(response.data.branches);
         setBranchSelectionRequired(true);
       } else {
         const {token, user} = response.data.data;
-        // Panggil fungsi yang sudah di-memoize
         await setTokenAndInfo(token, user);
         await syncFcmToken(token);
       }
     },
-    [setTokenAndInfo, syncFcmToken], // Dependency lengkap
+    [setTokenAndInfo, syncFcmToken],
+  );
+
+  const loginDevice = useCallback(
+    async (userKode, password, deviceId, signature, latitude, longitude) => {
+      // Teruskan ke API
+      const response = await loginWithDeviceApi(
+        userKode,
+        password,
+        deviceId,
+        signature,
+        latitude,
+        longitude,
+      );
+      if (response.data.multiBranch) {
+        setPreAuthToken(response.data.preAuthToken);
+        setBranches(response.data.branches);
+        setBranchSelectionRequired(true);
+      } else {
+        const {token, user} = response.data.data;
+        await setTokenAndInfo(token, user);
+        await syncFcmToken(token);
+      }
+    },
+    [setTokenAndInfo, syncFcmToken],
   );
 
   const finalizeLogin = useCallback(
-    async branchCode => {
+    async (branchCode, latitude, longitude) => {
       try {
-        const response = await selectBranchApi(branchCode, preAuthToken);
+        const response = await selectBranchApi(
+          branchCode,
+          preAuthToken,
+          latitude,
+          longitude,
+        );
         const {token, user} = response.data.data;
         await setTokenAndInfo(token, user);
         await syncFcmToken(token);
@@ -191,11 +213,13 @@ export const AuthProvider = ({children}) => {
         Toast.show({
           type: 'error',
           text1: 'Login Gagal',
-          text2: 'Terjadi kesalahan saat memilih cabang',
+          text2:
+            error.response?.data?.message ||
+            'Terjadi kesalahan saat memilih cabang',
         });
       }
     },
-    [preAuthToken, setTokenAndInfo, syncFcmToken], // Dependency lengkap
+    [preAuthToken, setTokenAndInfo, syncFcmToken],
   );
 
   const logout = useCallback(async () => {
@@ -208,7 +232,9 @@ export const AuthProvider = ({children}) => {
       }
     }
 
-    if (logoutTimer.current) clearTimeout(logoutTimer.current);
+    if (logoutTimer.current) {
+      clearTimeout(logoutTimer.current);
+    }
 
     if (userInfo && userInfo.cabang) {
       unsubscribeFromTopic(userInfo.cabang);
@@ -255,7 +281,9 @@ export const AuthProvider = ({children}) => {
           // Mulai timer auto-logout saat aplikasi dibuka
           startLogoutTimer(token);
 
-          if (user.cabang) subscribeToTopic(user.cabang);
+          if (user.cabang) {
+            subscribeToTopic(user.cabang);
+          }
         }
       } catch (e) {
         console.error('Gagal memuat sesi:', e);
@@ -283,6 +311,7 @@ export const AuthProvider = ({children}) => {
     <AuthContext.Provider
       value={{
         login,
+        loginDevice,
         logout,
         isBranchSelectionRequired,
         branches,

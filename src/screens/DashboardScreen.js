@@ -39,7 +39,9 @@ const {width} = Dimensions.get('window');
 // --- Helper Format Rupiah (Copy dari ManagementDashboardScreen jika belum ada global helper) ---
 const formatRupiah = angka => {
   const numberValue = Number(angka);
-  if (isNaN(numberValue)) return 'Rp 0';
+  if (isNaN(numberValue)) {
+    return 'Rp 0';
+  }
   const roundedValue = Math.round(numberValue);
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -75,38 +77,26 @@ const AuthItem = React.memo(
         {/* CONTENT UTAMA */}
         <View style={styles.authContent}>
           {item.o_transaksi ? (
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                marginBottom: 4,
-              }}>
+            <View style={styles.authInfoRow}>
               <Icon
                 name="file-text"
                 size={12}
                 color="#555"
-                style={{marginRight: 4}}
+                style={styles.authInfoIcon}
               />
               <Text style={styles.authTrxText}>{item.o_transaksi}</Text>
             </View>
           ) : null}
 
           {item.o_barcode && item.o_barcode !== '' ? (
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                marginBottom: 4,
-              }}>
+            <View style={styles.authInfoRow}>
               <Icon
                 name="maximize"
                 size={12}
                 color="#555"
-                style={{marginRight: 4}}
+                style={styles.authInfoIcon}
               />
-              <Text style={{fontSize: 12, color: '#555'}}>
-                {item.o_barcode}
-              </Text>
+              <Text style={styles.authBarcodeText}>{item.o_barcode}</Text>
             </View>
           ) : null}
 
@@ -166,14 +156,14 @@ const BranchGroup = React.memo(
           style={[styles.branchHeader, isExpanded && styles.branchHeaderActive]}
           onPress={() => onToggle(item.branch)}
           activeOpacity={0.7}>
-          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+          <View style={styles.branchHeaderLeft}>
             <View style={styles.branchIconBg}>
               <Icon name="map-pin" size={16} color="#fff" />
             </View>
             <Text style={styles.branchTitle}>CABANG {item.branch}</Text>
           </View>
 
-          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+          <View style={styles.branchHeaderRight}>
             <View style={styles.countBadge}>
               <Text style={styles.countText}>{count}</Text>
             </View>
@@ -181,7 +171,7 @@ const BranchGroup = React.memo(
               name={isExpanded ? 'chevron-up' : 'chevron-down'}
               size={20}
               color="#666"
-              style={{marginLeft: 10}}
+              style={styles.chevronIcon}
             />
           </View>
         </TouchableOpacity>
@@ -288,10 +278,14 @@ const DashboardScreen = ({navigation}) => {
   }, []);
 
   const isSpecialUser = useMemo(() => {
-    if (!userInfo || !userInfo.nama || !userInfo.cabang) return false;
+    if (!userInfo || !userInfo.nama || !userInfo.cabang) {
+      return false;
+    }
     const userBranch = userInfo.cabang;
     const userName = userInfo.nama.toUpperCase();
-    if (userBranch !== 'KDC') return false;
+    if (userBranch !== 'KDC') {
+      return false;
+    }
     const allowedNames = ['DARUL', 'HARIS', 'ESTU', 'RIO', 'SETYO', 'ADMIN'];
     return allowedNames.some(name => userName.includes(name));
   }, [userInfo]);
@@ -321,17 +315,23 @@ const DashboardScreen = ({navigation}) => {
       console.log('Err Auth:', error);
       // Optional: Alert error jika perlu
     } finally {
-      if (isMounted.current) setLoadingAuth(false);
+      if (isMounted.current) {
+        setLoadingAuth(false);
+      }
     }
   }, [userToken]);
 
   // --- LOGIC GROUPING & PROCESS ---
   const groupedAuthList = useMemo(() => {
-    if (!authList.length) return [];
+    if (!authList.length) {
+      return [];
+    }
     const groups = {};
     authList.forEach(item => {
       const cab = item.o_cab || 'LAINNYA';
-      if (!groups[cab]) groups[cab] = [];
+      if (!groups[cab]) {
+        groups[cab] = [];
+      }
       groups[cab].push(item);
     });
     return Object.keys(groups)
@@ -362,7 +362,9 @@ const DashboardScreen = ({navigation}) => {
           error.response?.data?.message || 'Gagal memproses',
         );
       } finally {
-        if (isMounted.current) setProcessingAuth(null);
+        if (isMounted.current) {
+          setProcessingAuth(null);
+        }
       }
     },
     [userToken],
@@ -381,8 +383,9 @@ const DashboardScreen = ({navigation}) => {
     [expandedBranch, processingAuth, toggleBranch, handleProcessAuth],
   );
 
-  if (isSpecialUser)
+  if (isSpecialUser) {
     return <ManagementDashboardScreen navigation={navigation} />;
+  }
 
   // --- DATA MENU ---
   const allMenus = [
@@ -705,7 +708,9 @@ const DashboardScreen = ({navigation}) => {
   // Logic Grouping untuk List di Bawah
   const groupedMenus = allMenus.reduce((acc, menu) => {
     if (menu.allowed) {
-      if (!acc[menu.group]) acc[menu.group] = [];
+      if (!acc[menu.group]) {
+        acc[menu.group] = [];
+      }
       acc[menu.group].push(menu);
     }
     return acc;
@@ -720,7 +725,7 @@ const DashboardScreen = ({navigation}) => {
       />
 
       {/* 1. HEADER (Tinggi 280 agar muat Quick Access) */}
-      <View style={{height: 280, overflow: 'hidden'}}>
+      <View style={styles.headerWrapper}>
         <LinearGradient
           colors={['#1565C0', '#42A5F5']}
           start={{x: 0, y: 0}}
@@ -749,7 +754,7 @@ const DashboardScreen = ({navigation}) => {
 
       <ScrollView
         style={styles.contentContainer}
-        contentContainerStyle={{paddingBottom: 50}}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
         {/* 2. FLOATING QUICK ACCESS (Kartu Putih di Atas) */}
         {quickAccessMenus.length > 0 && (
@@ -781,13 +786,13 @@ const DashboardScreen = ({navigation}) => {
         animationType="slide"
         onRequestClose={() => setOtorisasiVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, {height: '80%'}]}>
+          <View style={[styles.modalContent, styles.modalContentLarge]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Daftar Persetujuan</Text>
-              <View style={{flexDirection: 'row', alignItems: 'center'}}>
+              <View style={styles.modalHeaderActions}>
                 <TouchableOpacity
                   onPress={fetchPendingAuth}
-                  style={{marginRight: 15}}>
+                  style={styles.refreshIcon}>
                   <Icon name="refresh-cw" size={20} color="#1976D2" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setOtorisasiVisible(false)}>
@@ -798,16 +803,14 @@ const DashboardScreen = ({navigation}) => {
             {loadingAuth ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#1976D2" />
-                <Text style={{marginTop: 10, color: '#666'}}>
-                  Memuat data...
-                </Text>
+                <Text style={styles.loadingText}>Memuat data...</Text>
               </View>
             ) : (
               <FlatList
                 data={groupedAuthList}
                 keyExtractor={item => item.branch}
                 renderItem={renderAuthItem}
-                contentContainerStyle={{padding: 16}}
+                contentContainerStyle={styles.authListContent}
                 ListEmptyComponent={
                   <View style={styles.emptyContainer}>
                     <Icon name="check-square" size={48} color="#ddd" />
@@ -1178,6 +1181,65 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 5,
     zIndex: 100, // Pastikan selalu berada di paling atas
+  },
+  authInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+
+  authInfoIcon: {
+    marginRight: 4,
+  },
+
+  authBarcodeText: {
+    fontSize: 12,
+    color: '#555',
+  },
+
+  branchHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  branchHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  chevronIcon: {
+    marginLeft: 10,
+  },
+
+  headerWrapper: {
+    height: 280,
+    overflow: 'hidden',
+  },
+
+  scrollContent: {
+    paddingBottom: 50,
+  },
+
+  modalContentLarge: {
+    height: '80%',
+  },
+
+  modalHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  refreshIcon: {
+    marginRight: 15,
+  },
+
+  loadingText: {
+    marginTop: 10,
+    color: '#666',
+  },
+
+  authListContent: {
+    padding: 16,
   },
 });
 

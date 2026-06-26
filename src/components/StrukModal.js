@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   Alert,
   PermissionsAndroid,
-  ToastAndroid,
   TextInput,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
@@ -54,18 +53,28 @@ const StrukModal = ({visible, onClose, data, onSendWa, isBazar = false}) => {
 
   // 2. Mapping Data (displayData) - Menangani Bazar vs Reguler
   const displayData = useMemo(() => {
-    if (!data || !data.header) return null;
+    if (!data || !data.header) {
+      return null;
+    }
 
     if (isBazar) {
       // Fungsi pembantu untuk menentukan nama customer jika data cus_nama kosong
       const getCustomerName = () => {
-        if (data.header.cus_nama) return data.header.cus_nama;
-        if (data.header.so_customer_nama) return data.header.so_customer_nama;
+        if (data.header.cus_nama) {
+          return data.header.cus_nama;
+        }
+        if (data.header.so_customer_nama) {
+          return data.header.so_customer_nama;
+        }
 
         // Fallback manual berdasarkan kode (B0100000 -> BAZAR SOLO)
         const kode = data.header.so_customer || '';
-        if (kode === 'B0100000') return 'BAZAR SOLO';
-        if (kode.endsWith('00000')) return `BAZAR ${kode.substring(0, 3)}`;
+        if (kode === 'B0100000') {
+          return 'BAZAR SOLO';
+        }
+        if (kode.endsWith('00000')) {
+          return `BAZAR ${kode.substring(0, 3)}`;
+        }
 
         return 'UMUM';
       };
@@ -74,7 +83,7 @@ const StrukModal = ({visible, onClose, data, onSendWa, isBazar = false}) => {
       let sumEcerKeseluruhan = 0;
 
       const displayItems = data.details.map(d => {
-        const promoQty = parseInt(d.promo_qty) || 0;
+        const promoQty = parseInt(d.promo_qty, 10) || 0;
         const currentQty = parseFloat(d.qty || d.sod_qty || 0);
 
         // 1. Tentukan Harga Ecer Riil (Harga sebelum bundling/diskon)
@@ -83,12 +92,15 @@ const StrukModal = ({visible, onClose, data, onSendWa, isBazar = false}) => {
         if (promoQty > 1) {
           // Pakai rumus pinalti ecer (+5rb) agar hematnya terlihat besar
           hargaEcerRiil = Math.floor(100000 / promoQty) + 5000;
-          if (promoQty === 3) hargaEcerRiil = 38500;
+          if (promoQty === 3) {
+            hargaEcerRiil = 38500;
+          }
         }
 
         // Jika harga_jual di DB masih 0, fallback ke harga nota agar tidak 0 di struk
-        if (hargaEcerRiil <= 0)
+        if (hargaEcerRiil <= 0) {
           hargaEcerRiil = parseFloat(d.harga || d.sod_harga || 0);
+        }
 
         const totalBarisEcer = currentQty * hargaEcerRiil;
         sumEcerKeseluruhan += totalBarisEcer;
@@ -154,7 +166,9 @@ const StrukModal = ({visible, onClose, data, onSendWa, isBazar = false}) => {
   }, [data, isBazar, userInfo]);
 
   // --- EARLY RETURN DI SINI (SETELAH SEMUA HOOK DIPANGGIL) ---
-  if (!data || !displayData) return null;
+  if (!data || !displayData) {
+    return null;
+  }
 
   // --- LOGIC PRINTER ---
   const requestBluetoothPermission = async () => {
@@ -186,7 +200,9 @@ const StrukModal = ({visible, onClose, data, onSendWa, isBazar = false}) => {
 
   const handlePrint = async () => {
     const hasPermission = await requestBluetoothPermission();
-    if (!hasPermission) return;
+    if (!hasPermission) {
+      return;
+    }
 
     if (currentPrinter) {
       setIsPrinting(true);
@@ -273,7 +289,9 @@ const StrukModal = ({visible, onClose, data, onSendWa, isBazar = false}) => {
       });
 
       let targetHp = inputHp.replace(/[^0-9]/g, '');
-      if (targetHp.startsWith('0')) targetHp = '62' + targetHp.slice(1);
+      if (targetHp.startsWith('0')) {
+        targetHp = '62' + targetHp.slice(1);
+      }
 
       formData.append('hp', targetHp);
       formData.append('caption', `Struk Belanja No: ${displayData.nomor}`);
@@ -356,7 +374,7 @@ const StrukModal = ({visible, onClose, data, onSendWa, isBazar = false}) => {
                       </Text>
                     </View>
                     {item.diskon > 0 && (
-                      <Text style={[styles.promoText, {textAlign: 'right'}]}>
+                      <Text style={[styles.promoText, styles.textRight]}>
                         Disc: -{formatRupiah(item.diskon * item.qty)}
                       </Text>
                     )}
@@ -383,18 +401,10 @@ const StrukModal = ({visible, onClose, data, onSendWa, isBazar = false}) => {
                 )}
                 {displayData.totalHemat > 0 && (
                   <View style={styles.summaryRow}>
-                    <Text
-                      style={[
-                        styles.textSmall,
-                        {color: '#2E7D32', fontWeight: 'bold'},
-                      ]}>
+                    <Text style={[styles.textSmall, styles.totalHematText]}>
                       TOTAL HEMAT
                     </Text>
-                    <Text
-                      style={[
-                        styles.textSmall,
-                        {color: '#2E7D32', fontWeight: 'bold'},
-                      ]}>
+                    <Text style={[styles.textSmall, styles.totalHematText]}>
                       -{formatRupiah(displayData.totalHemat)}
                     </Text>
                   </View>
@@ -488,16 +498,18 @@ const StrukModal = ({visible, onClose, data, onSendWa, isBazar = false}) => {
           <View style={styles.printerOverlay}>
             <View style={styles.printerContainer}>
               <Text style={styles.printerTitle}>Pilih Printer Bluetooth</Text>
-              <ScrollView style={{maxHeight: 300}}>
+              <ScrollView style={styles.printerScroll}>
                 {printers.map((p, i) => (
                   <TouchableOpacity
                     key={i}
                     style={styles.printerItem}
                     onPress={() => connectAndPrint(p)}>
                     <Icon name="printer" size={24} color="#333" />
-                    <View style={{marginLeft: 10}}>
-                      <Text style={{fontWeight: 'bold'}}>{p.device_name}</Text>
-                      <Text style={{fontSize: 12, color: '#666'}}>
+                    <View style={styles.printerInfo}>
+                      <Text style={styles.printerDeviceName}>
+                        {p.device_name}
+                      </Text>
+                      <Text style={styles.printerMac}>
                         {p.inner_mac_address}
                       </Text>
                     </View>
@@ -507,7 +519,7 @@ const StrukModal = ({visible, onClose, data, onSendWa, isBazar = false}) => {
               <TouchableOpacity
                 style={styles.closePrinterBtn}
                 onPress={() => setShowPrinterList(false)}>
-                <Text style={{color: 'red', fontWeight: 'bold'}}>BATAL</Text>
+                <Text style={styles.cancelPrinterText}>BATAL</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -664,6 +676,36 @@ const styles = StyleSheet.create({
     borderColor: '#eee',
   },
   closePrinterBtn: {marginTop: 15, alignItems: 'center', padding: 10},
+  textRight: {
+    textAlign: 'right',
+  },
+
+  totalHematText: {
+    color: '#2E7D32',
+    fontWeight: 'bold',
+  },
+
+  printerScroll: {
+    maxHeight: 300,
+  },
+
+  printerInfo: {
+    marginLeft: 10,
+  },
+
+  printerDeviceName: {
+    fontWeight: 'bold',
+  },
+
+  printerMac: {
+    fontSize: 12,
+    color: '#666',
+  },
+
+  cancelPrinterText: {
+    color: 'red',
+    fontWeight: 'bold',
+  },
 });
 
 export default StrukModal;

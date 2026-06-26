@@ -113,13 +113,13 @@ const LaporanPendingScreen = ({navigation}) => {
                 ) : (
                   detailItems.map((detail, index) => (
                     <View key={index} style={styles.detailItem}>
-                      <View style={{flex: 1}}>
+                      <View style={styles.detailLeft}>
                         <Text style={styles.detailName}>{detail.nama}</Text>
                         <Text style={styles.detailSize}>
                           Size: {detail.ukuran}
                         </Text>
                       </View>
-                      <View style={{alignItems: 'flex-end'}}>
+                      <View style={styles.detailRight}>
                         <Text style={styles.detailSelisih}>
                           Selisih: {detail.selisih}
                         </Text>
@@ -184,6 +184,13 @@ const styles = StyleSheet.create({
   detailInfo: {fontSize: 12, color: '#757575'},
   emptyContainer: {alignItems: 'center', marginTop: 50},
   emptyText: {color: '#757575', fontSize: 16},
+  detailLeft: {
+    flex: 1,
+  },
+
+  detailRight: {
+    alignItems: 'flex-end',
+  },
 });
 
 export default LaporanPendingScreen;

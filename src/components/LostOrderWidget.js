@@ -121,7 +121,7 @@ const LostOrderWidget = ({visible, onClose}) => {
         <View style={styles.modalContent}>
           {/* HEADER WIDGET */}
           <View style={styles.header}>
-            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            <View style={styles.headerLeft}>
               <View style={styles.iconBg}>
                 <Icon name="user-x" size={20} color="#E91E63" />
               </View>
@@ -174,17 +174,15 @@ const LostOrderWidget = ({visible, onClose}) => {
                       styles.chip,
                       isSelected && styles.chipActive,
                       isSelected &&
-                        item.id === 'Stok Kosong' && {
-                          borderColor: '#FFA000',
-                          backgroundColor: '#FFF8E1',
-                        },
+                        item.id === 'Stok Kosong' &&
+                        styles.chipStockKosong,
                     ]}
                     onPress={() => handleSelectAlasan(item.id)}>
                     <Icon
                       name={item.icon}
                       size={14}
                       color={item.color}
-                      style={{marginRight: 6}}
+                      style={styles.chipIcon}
                     />
                     <Text
                       style={[
@@ -206,31 +204,28 @@ const LostOrderWidget = ({visible, onClose}) => {
               </Text>
 
               <TextInput
-                style={[styles.inputLight, {backgroundColor: '#FFF'}]}
+                style={[styles.inputLight, styles.inputWhite]}
                 placeholder="Contoh: Kaos Oversize, Jaket..."
                 placeholderTextColor="#999"
                 value={form.produkNama}
                 onChangeText={t => setForm({...form, produkNama: t})}
               />
 
-              <View style={[styles.inputRow, {marginTop: 12}]}>
-                <View style={[styles.inputGroupHalf, {flex: 2}]}>
+              <View style={[styles.inputRow, styles.inputRowTop]}>
+                <View style={[styles.inputGroupHalf, styles.flex2]}>
                   <Text style={styles.miniLabel}>Ukuran</Text>
                   <TextInput
-                    style={[styles.inputLight, {backgroundColor: '#FFF'}]}
+                    style={[styles.inputLight, styles.inputWhite]}
                     placeholder="M, L, 42, All Size..."
                     placeholderTextColor="#999"
                     value={form.ukuran}
                     onChangeText={t => setForm({...form, ukuran: t})}
                   />
                 </View>
-                <View style={[styles.inputGroupHalf, {flex: 1}]}>
+                <View style={styles.inputGroupHalf}>
                   <Text style={styles.miniLabel}>Total Qty</Text>
                   <TextInput
-                    style={[
-                      styles.inputLight,
-                      {textAlign: 'center', backgroundColor: '#FFF'},
-                    ]}
+                    style={[styles.inputLight, styles.inputWhiteCenter]}
                     keyboardType="numeric"
                     value={form.qty}
                     onChangeText={t => setForm({...form, qty: t})}
@@ -429,6 +424,40 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: 'bold',
     fontSize: 15,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  chipStockKosong: {
+    borderColor: '#FFA000',
+    backgroundColor: '#FFF8E1',
+  },
+
+  chipIcon: {
+    marginRight: 6,
+  },
+
+  inputWhite: {
+    backgroundColor: '#FFF',
+  },
+
+  inputRowTop: {
+    marginTop: 12,
+  },
+
+  flex2: {
+    flex: 2,
+  },
+
+  flex1: {
+    flex: 1,
+  },
+
+  inputWhiteCenter: {
+    backgroundColor: '#FFF',
+    textAlign: 'center',
   },
 });
 

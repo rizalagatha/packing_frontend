@@ -8,14 +8,15 @@ import {
   StatusBar,
   Animated,
   TouchableWithoutFeedback,
-  Dimensions,
   ActivityIndicator,
   Alert,
+  Platform,
+  PermissionsAndroid,
 } from 'react-native';
 import {AuthContext} from '../context/AuthContext';
 import Icon from 'react-native-vector-icons/Feather';
-
-const {width} = Dimensions.get('window');
+import Geolocation from 'react-native-geolocation-service';
+import Toast from 'react-native-toast-message';
 
 // --- 1. BOUNCY BUTTON (FIXED useEffect Dependencies) ---
 const BouncyButton = ({onPress, children, style, delay = 0, disabled}) => {
@@ -42,21 +43,23 @@ const BouncyButton = ({onPress, children, style, delay = 0, disabled}) => {
   }, [delay, opacityAnim, slideAnim]); // <--- DEPENDENCY SUDAH DITAMBAHKAN
 
   const onPressIn = () => {
-    if (!disabled)
+    if (!disabled) {
       Animated.spring(scaleValue, {
         toValue: 0.96,
         useNativeDriver: true,
       }).start();
+    }
   };
 
   const onPressOut = () => {
-    if (!disabled)
+    if (!disabled) {
       Animated.spring(scaleValue, {
         toValue: 1,
         friction: 3,
         tension: 40,
         useNativeDriver: true,
       }).start();
+    }
   };
 
   return (
@@ -85,7 +88,7 @@ const BranchCard = ({item, onPress, index, isLoading, isOtherLoading}) => {
 
   return (
     <BouncyButton
-      style={[styles.cardContainer, isOtherLoading && {opacity: 0.5}]}
+      style={[styles.cardContainer, isOtherLoading && styles.cardDisabled]}
       onPress={onPress}
       delay={index * 100}
       disabled={isLoading || isOtherLoading}>
@@ -115,15 +118,69 @@ const BranchSelectionScreen = () => {
 
   const [loadingBranchCode, setLoadingBranchCode] = useState(null);
 
-  const handleSelectBranch = async kodeCabang => {
-    setLoadingBranchCode(kodeCabang);
-    try {
-      await finalizeLogin(kodeCabang);
-    } catch (error) {
-      console.log('Error selecting branch:', error);
-      Alert.alert('Gagal', 'Gagal memilih cabang. Silakan coba lagi.');
-      setLoadingBranchCode(null);
+  // --- FUNGSI MINTA IZIN LOKASI ---
+  const requestLocationPermission = async () => {
+    if (Platform.OS === 'ios') {
+      const auth = await Geolocation.requestAuthorization('whenInUse');
+      return auth === 'granted';
     }
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    }
+    return false;
+  };
+
+  // --- FUNGSI PILIH CABANG (DENGAN GPS) ---
+  const handleSelectBranch = async kodeCabang => {
+    setLoadingBranchCode(kodeCabang); // Munculkan loading spinner di kartu yang diklik
+
+    // 1. Cek Izin GPS
+    const hasPermission = await requestLocationPermission();
+    if (!hasPermission) {
+      setLoadingBranchCode(null);
+      return Toast.show({
+        type: 'error',
+        text1: 'Akses Ditolak',
+        text2: 'Mohon izinkan akses lokasi (GPS) untuk masuk ke cabang.',
+      });
+    }
+
+    // 2. Kunci Koordinat GPS
+    Geolocation.getCurrentPosition(
+      async position => {
+        // Blokir Fake GPS
+        if (position.mocked) {
+          setLoadingBranchCode(null);
+          return Alert.alert(
+            'Keamanan',
+            'Aplikasi Fake GPS terdeteksi. Matikan Fake GPS untuk melanjutkan.',
+          );
+        }
+
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+
+        try {
+          // 3. Tembak API finalizeLogin beserta lokasi saat ini
+          await finalizeLogin(kodeCabang, lat, lon);
+        } catch (error) {
+          console.log('Error selecting branch:', error);
+          setLoadingBranchCode(null); // Matikan loading jika gagal
+        }
+      },
+      error => {
+        setLoadingBranchCode(null);
+        Alert.alert(
+          'Error GPS',
+          'Gagal mendapatkan lokasi. Pastikan GPS menyala dan sinyal kuat.',
+        );
+        console.log(error);
+      },
+      {enableHighAccuracy: true, timeout: 15000, maximumAge: 10000},
+    );
   };
 
   // Helper untuk memanggil logout dengan aman
@@ -169,7 +226,7 @@ const BranchSelectionScreen = () => {
           );
         }}
         ListFooterComponent={
-          <View style={{marginTop: 40, alignItems: 'center'}}>
+          <View style={styles.footerContainer}>
             <TouchableOpacity
               onPress={handleLogout} // Panggil fungsi wrapper
               style={styles.logoutBtn}
@@ -178,7 +235,7 @@ const BranchSelectionScreen = () => {
                 name="log-out"
                 size={16}
                 color="#D32F2F"
-                style={{marginRight: 8}}
+                style={styles.logoutIcon}
               />
               <Text style={styles.logoutText}>Bukan akun Anda? Keluar</Text>
             </TouchableOpacity>
@@ -289,6 +346,18 @@ const styles = StyleSheet.create({
     color: '#D32F2F',
     fontWeight: '600',
     fontSize: 14,
+  },
+  cardDisabled: {
+    opacity: 0.5,
+  },
+
+  footerContainer: {
+    marginTop: 40,
+    alignItems: 'center',
+  },
+
+  logoutIcon: {
+    marginRight: 8,
   },
 });
 

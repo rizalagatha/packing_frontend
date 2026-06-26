@@ -59,12 +59,14 @@ const BazarSalesHistoryScreen = ({navigation}) => {
           <View
             style={[
               styles.badge,
-              {backgroundColor: item.is_uploaded ? '#E8F5E9' : '#FFF3E0'},
+              item.is_uploaded ? styles.badgeUploaded : styles.badgeLocal,
             ]}>
             <Text
               style={[
                 styles.badgeText,
-                {color: item.is_uploaded ? '#2E7D32' : '#E65100'},
+                item.is_uploaded
+                  ? styles.badgeTextUploaded
+                  : styles.badgeTextLocal,
               ]}>
               {item.is_uploaded ? 'TERKIRIM' : 'LOCAL'}
             </Text>
@@ -84,12 +86,14 @@ const BazarSalesHistoryScreen = ({navigation}) => {
   );
 
   return (
-    <SafeAreaView style={{flex: 1, backgroundColor: '#F5F7FA'}}>
+    <SafeAreaView style={styles.container}>
       <FlatList
         data={history}
         keyExtractor={it => it.so_nomor}
         renderItem={renderItem}
-        contentContainerStyle={history.length === 0 ? {flex: 1} : {padding: 15}}
+        contentContainerStyle={
+          history.length === 0 ? styles.listEmpty : styles.listContent
+        }
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -190,6 +194,13 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   btnText: {color: '#fff', fontWeight: 'bold', fontSize: 14},
+  container: {flex: 1, backgroundColor: '#F5F7FA'},
+  badgeUploaded: {backgroundColor: '#E8F5E9'},
+  badgeLocal: {backgroundColor: '#FFF3E0'},
+  badgeTextUploaded: {color: '#2E7D32'},
+  badgeTextLocal: {color: '#E65100'},
+  listEmpty: {flex: 1},
+  listContent: {padding: 15},
 });
 
 export default BazarSalesHistoryScreen;

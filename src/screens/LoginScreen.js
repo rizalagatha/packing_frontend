@@ -26,8 +26,12 @@ import {AuthContext} from '../context/AuthContext';
 import axios from 'axios';
 import RNFS from 'react-native-fs';
 import FileViewer from 'react-native-file-viewer';
+import Geolocation from 'react-native-geolocation-service';
+import {PermissionsAndroid} from 'react-native';
+import ReactNativeBiometrics from 'react-native-biometrics';
+import {enrollDeviceApi, requestChallengeApi} from '../api/ApiService'; // Pastikan path sesuai
 
-const {width, height} = Dimensions.get('window');
+const {height} = Dimensions.get('window');
 
 const BouncyButton = ({onPress, disabled, isLoading, children, style}) => {
   const scaleValue = useRef(new Animated.Value(1)).current;
@@ -60,7 +64,11 @@ const BouncyButton = ({onPress, disabled, isLoading, children, style}) => {
       <Animated.View
         style={[
           style,
-          {transform: [{scale: scaleValue}], opacity: disabled ? 0.8 : 1},
+          styles.bouncyButton,
+          disabled && styles.buttonDisabled,
+          {
+            transform: [{scale: scaleValue}],
+          },
         ]}>
         {isLoading ? (
           <ActivityIndicator size="small" color="#ffffff" />
@@ -73,7 +81,7 @@ const BouncyButton = ({onPress, disabled, isLoading, children, style}) => {
 };
 
 const LoginScreen = () => {
-  const {login} = useContext(AuthContext);
+  const {login, loginDevice} = useContext(AuthContext);
   const [userKode, setUserKode] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -202,46 +210,175 @@ const LoginScreen = () => {
     checkUpdate();
   }, []);
 
+  // Fungsi Helper Meminta Izin GPS
+  const requestLocationPermission = async () => {
+    if (Platform.OS === 'ios') {
+      const auth = await Geolocation.requestAuthorization('whenInUse');
+      return auth === 'granted';
+    }
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    }
+    return false;
+  };
+
   const handleLogin = async () => {
     Keyboard.dismiss();
-    setErrorField(''); // Reset error
+    setErrorField('');
 
-    // Validasi Visual
     if (!userKode) {
       setErrorField('user');
-      Toast.show({
+      return Toast.show({
         type: 'error',
         text1: 'Ops!',
         text2: 'Kode user wajib diisi.',
       });
-      return;
     }
     if (!password) {
       setErrorField('pass');
-      Toast.show({
+      return Toast.show({
         type: 'error',
         text1: 'Ops!',
         text2: 'Password wajib diisi.',
       });
-      return;
     }
 
     setIsLoading(true);
-    try {
-      await login(userKode, password);
-    } catch (error) {
-      // Jika error 401 (Salah password), kasih border merah di kedua field atau pass
-      setErrorField('all');
-      console.log(
-        'Login Gagal:',
-        error.response?.data?.message || error.message,
-      );
-      const message =
-        error.response?.data?.message || 'Kode User atau Password salah.';
-      Toast.show({type: 'error', text1: 'Gagal Masuk', text2: message});
-    } finally {
+
+    // 1. BACA LOKASI GPS
+    const hasPermission = await requestLocationPermission();
+    if (!hasPermission) {
       setIsLoading(false);
+      return Toast.show({
+        type: 'error',
+        text1: 'Akses Ditolak',
+        text2: 'Izinkan akses GPS untuk login.',
+      });
     }
+
+    Geolocation.getCurrentPosition(
+      async position => {
+        if (position.mocked) {
+          setIsLoading(false);
+          return Alert.alert(
+            'Keamanan',
+            'Matikan aplikasi Fake GPS untuk login.',
+          );
+        }
+
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+
+        try {
+          const bypassUsers = ['HARIS', 'SETYO'];
+          if (bypassUsers.includes(userKode.toUpperCase())) {
+            // Tembak fungsi login standar (API /auth/login)
+            await login(userKode, password, lat, lon);
+            return; // Hentikan eksekusi di sini agar tidak memanggil biometrik
+          }
+
+          const rnBiometrics = new ReactNativeBiometrics();
+          const {keysExist} = await rnBiometrics.biometricKeysExist();
+
+          // Deteksi Info HP (Menggunakan Promise di versi terbaru DeviceInfo)
+          const deviceId = await DeviceInfo.getUniqueId();
+          const deviceName = await DeviceInfo.getDeviceName();
+
+          // ==========================================
+          // SKENARIO A: PERANGKAT BELUM PUNYA KUNCI (ENROLLMENT)
+          // ==========================================
+          if (!keysExist) {
+            // Generate Key di dalam Hardware Keystore
+            const {publicKey} = await rnBiometrics.createKeys();
+
+            // Tembak API Pendaftaran
+            await enrollDeviceApi(
+              userKode,
+              password,
+              deviceId,
+              publicKey,
+              deviceName,
+            );
+
+            Toast.show({
+              type: 'success',
+              text1: 'Pendaftaran Berhasil',
+              text2: 'Perangkat sedang menunggu persetujuan Manager Pusat.',
+            });
+          }
+          // ==========================================
+          // SKENARIO B: PERANGKAT SUDAH PUNYA KUNCI (LOGIN)
+          // ==========================================
+          else {
+            // 1. Minta string acak (Challenge) dari Backend
+            const challengeRes = await requestChallengeApi(userKode, deviceId);
+            const challenge = challengeRes.data.challenge;
+
+            // 2. Minta Kasir tempel Sidik Jari untuk menandatangani Challenge
+            const {success, signature} = await rnBiometrics.createSignature({
+              promptMessage: 'Verifikasi Keamanan Perangkat',
+              payload: challenge,
+            });
+
+            if (success) {
+              // 3. Tembak API Login dengan Signature & GPS (Sertakan password!)
+              await loginDevice(
+                userKode,
+                password,
+                deviceId,
+                signature,
+                lat,
+                lon,
+              );
+            } else {
+              Toast.show({
+                type: 'error',
+                text1: 'Batal',
+                text2: 'Verifikasi dibatalkan.',
+              });
+            }
+          }
+        } catch (error) {
+          setErrorField('all');
+          const msg =
+            error.response?.data?.message ||
+            error.message ||
+            'Koneksi ke server gagal.';
+
+          // ==========================================
+          // PENANGANAN KHUSUS JIKA KUNCI HANGUS (SIDIK JARI DIUBAH)
+          // ==========================================
+          if (msg.includes('permanently invalidated')) {
+            const rnBiometrics = new ReactNativeBiometrics();
+            // Hapus sisa kunci yang sudah rusak di HP
+            await rnBiometrics.deleteKeys();
+
+            Toast.show({
+              type: 'error',
+              text1: 'Sistem Keamanan Berubah',
+              text2:
+                'Pengaturan sidik jari/layar HP diubah. Silakan tekan MASUK sekali lagi untuk mendaftarkan ulang perangkat.',
+            });
+          } else {
+            // Error umum (password salah, gps jauh, dll)
+            Toast.show({type: 'error', text1: 'Akses Ditolak', text2: msg});
+          }
+        } finally {
+          setIsLoading(false);
+        }
+      },
+      error => {
+        setIsLoading(false);
+        Alert.alert(
+          'Error GPS',
+          'Gagal mendapatkan lokasi. Pastikan sinyal GPS kuat.',
+        );
+      },
+      {enableHighAccuracy: true, timeout: 15000, maximumAge: 10000},
+    );
   };
 
   return (
@@ -272,7 +409,7 @@ const LoginScreen = () => {
                   Yang Baru di Versi Ini:
                 </Text>
                 <ScrollView
-                  style={{maxHeight: 150}}
+                  style={styles.releaseNotesScroll}
                   showsVerticalScrollIndicator={false}>
                   {Array.isArray(updateData.releaseNotes) ? (
                     updateData.releaseNotes.map((note, index) => (
@@ -333,25 +470,32 @@ const LoginScreen = () => {
       {/* 2. Keyboard Avoiding View (Agar form tidak tertutup keyboard) */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{flex: 1}}>
+        style={styles.flex1}>
         <ScrollView
-          contentContainerStyle={{flexGrow: 1}}
+          contentContainerStyle={styles.flexGrow1}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           {/* HEADER GRADIENT */}
           <View
-            style={{height: height * 0.35, width: '100%', overflow: 'hidden'}}>
+            style={[
+              styles.headerContainer,
+              {
+                height: height * 0.35,
+              },
+            ]}>
             <LinearGradient
               colors={['#1565C0', '#42A5F5']}
               start={{x: 0, y: 0}}
               end={{x: 1, y: 1}}
               style={styles.gradientHeader}>
               <Animated.View
-                style={{
-                  opacity: fadeAnim,
-                  transform: [{translateY: slideAnim}],
-                  alignItems: 'center',
-                }}>
+                style={[
+                  styles.animatedHeader,
+                  {
+                    opacity: fadeAnim,
+                    transform: [{translateY: slideAnim}],
+                  },
+                ]}>
                 <Image
                   source={require('../assets/logo.png')}
                   style={styles.logo}
@@ -383,7 +527,7 @@ const LoginScreen = () => {
                     ? '#D32F2F'
                     : '#78909C'
                 }
-                style={{marginLeft: 15}}
+                style={styles.iconMargin}
               />
               <TextInput
                 style={styles.input}
@@ -413,7 +557,7 @@ const LoginScreen = () => {
                     ? '#D32F2F'
                     : '#78909C'
                 }
-                style={{marginLeft: 15}}
+                style={styles.iconMargin}
               />
               <TextInput
                 style={styles.input}
@@ -428,7 +572,7 @@ const LoginScreen = () => {
               />
               <TouchableOpacity
                 onPress={() => setIsPasswordVisible(!isPasswordVisible)}
-                style={{padding: 10}}>
+                style={styles.iconButton}>
                 <Icon
                   name={isPasswordVisible ? 'eye-off' : 'eye'}
                   size={20}
@@ -439,7 +583,7 @@ const LoginScreen = () => {
 
             {/* 3. Tombol Lupa Password */}
             <TouchableOpacity
-              style={{alignSelf: 'flex-end', marginBottom: 20}}
+              style={styles.forgotPassword}
               onPress={() =>
                 Toast.show({
                   type: 'info',
@@ -447,12 +591,10 @@ const LoginScreen = () => {
                   text2: 'Silakan hubungi IT/Admin untuk reset.',
                 })
               }>
-              <Text style={{color: '#1976D2', fontWeight: '600', fontSize: 13}}>
-                Lupa Password?
-              </Text>
+              <Text style={styles.forgotPasswordText}>Lupa Password?</Text>
             </TouchableOpacity>
 
-            <View style={{marginTop: 10}}>
+            <View style={styles.loginButtonWrapper}>
               <BouncyButton
                 style={styles.button}
                 onPress={handleLogin}
@@ -462,9 +604,8 @@ const LoginScreen = () => {
               </BouncyButton>
             </View>
 
-            <View
-              style={{marginTop: 40, alignItems: 'center', marginBottom: 20}}>
-              <Text style={{color: '#CFD8DC', fontSize: 12}}>
+            <View style={styles.versionContainer}>
+              <Text style={styles.versionText}>
                 Versi Aplikasi {appVersion}
               </Text>
             </View>
@@ -660,6 +801,68 @@ const styles = StyleSheet.create({
     backgroundColor: '#1976D2',
   },
   btnUpdateConfirmText: {color: '#FFF', fontWeight: 'bold'},
+  bouncyButton: {
+    opacity: 1,
+  },
+
+  buttonDisabled: {
+    opacity: 0.8,
+  },
+
+  releaseNotesScroll: {
+    maxHeight: 150,
+  },
+
+  flex1: {
+    flex: 1,
+  },
+
+  flexGrow1: {
+    flexGrow: 1,
+  },
+
+  headerContainer: {
+    width: '100%',
+    overflow: 'hidden',
+  },
+
+  animatedHeader: {
+    alignItems: 'center',
+  },
+
+  iconMargin: {
+    marginLeft: 15,
+  },
+
+  iconButton: {
+    padding: 10,
+  },
+
+  forgotPassword: {
+    alignSelf: 'flex-end',
+    marginBottom: 20,
+  },
+
+  forgotPasswordText: {
+    color: '#1976D2',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+
+  loginButtonWrapper: {
+    marginTop: 10,
+  },
+
+  versionContainer: {
+    marginTop: 40,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+
+  versionText: {
+    color: '#CFD8DC',
+    fontSize: 12,
+  },
 });
 
 export default LoginScreen;

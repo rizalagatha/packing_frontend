@@ -24,8 +24,8 @@ import SoundPlayer from 'react-native-sound-player';
 const AmbilBarangScreen = ({navigation}) => {
   const {userToken, userInfo} = useContext(AuthContext);
   const [items, setItems] = useState([]);
-  const [setIsLoading] = useState(false);
-  const [isAuthPending, setIsAuthPending] = useState(false); // State untuk overlay progress
+  const [isLoading, setIsLoading] = useState(false);
+  const [isAuthPending, setIsAuthPending] = useState(false);
   const [scannedBarcode, setScannedBarcode] = useState('');
   const barcodeInputRef = useRef(null);
 
@@ -97,19 +97,12 @@ const AmbilBarangScreen = ({navigation}) => {
 
   const handleSave = () => {
     if (items.length === 0) {
-      return Toast.show({
-        type: 'error',
-        text1: 'Daftar item kosong',
-      });
+      return Toast.show({type: 'error', text1: 'Daftar item kosong'});
     }
     if (!header.peminta) {
-      return Toast.show({
-        type: 'error',
-        text1: 'Nama peminta wajib diisi',
-      });
+      return Toast.show({type: 'error', text1: 'Nama peminta wajib diisi'});
     }
 
-    // Cek apakah ada jumlah yang melebihi stok sebelum minta izin
     const hasOverStock = items.some(i => i.jumlah > i.stok);
     if (hasOverStock) {
       return Alert.alert(
@@ -119,9 +112,15 @@ const AmbilBarangScreen = ({navigation}) => {
     }
 
     const totalQty = items.reduce((sum, i) => sum + i.jumlah, 0);
-    const infoText = `Ambil Barang\nPeminta: ${header.peminta}\nTotal: ${totalQty} Pcs`;
 
-    // Aktifkan Overlay Progress
+    // --- [BARU] Susun daftar item yang di-scan menjadi teks ---
+    const listBarangText = items
+      .map(i => `- ${i.jumlah}x ${i.nama} (${i.ukuran})`)
+      .join('\n');
+
+    // --- Gabungkan ke dalam Keterangan (infoText) ---
+    const infoText = `Ambil Barang | Peminta: ${header.peminta} | Total: ${totalQty} Pcs\n\nDetail Barang:\n${listBarangText}`;
+
     setIsAuthPending(true);
 
     requestAuthorization(
@@ -130,25 +129,38 @@ const AmbilBarangScreen = ({navigation}) => {
       'AMBIL_BARANG',
       totalQty,
       {
-        transaksi: 'DRAFT',
+        // --- Dibaca oleh UI Frontend (AuthHelper) agar tidak undefined ---
+        transaksi: 'NEW_TRX',
         keteranganLengkap: infoText,
         cabang: header.storeKode,
+
+        // --- Dibaca oleh Backend API ---
+        o_transaksi: 'NEW_TRX',
+        o_ket: infoText,
+        o_cab_tujuan: header.storeKode,
       },
       authResult => {
-        setIsAuthPending(false); // Matikan Overlay
+        setIsAuthPending(false);
         playSound('success');
-        executeSave(authResult.approver);
+        executeSave(authResult);
       },
       () => {
-        setIsAuthPending(false); // Matikan Overlay jika batal
+        setIsAuthPending(false);
       },
     );
   };
 
-  const executeSave = async approver => {
+  const executeSave = async authResult => {
     setIsLoading(true);
     try {
-      await saveAmbilBarangApi({header, items, approver}, userToken);
+      const payload = {
+        header,
+        items,
+        approver: authResult.approver,
+        authNomor: authResult.authNomor, //  Kunci utama penghubung otorisasi
+      };
+
+      await saveAmbilBarangApi(payload, userToken);
       Toast.show({type: 'success', text1: 'Berhasil disimpan'});
       navigation.goBack();
     } catch (e) {
@@ -262,8 +274,13 @@ const AmbilBarangScreen = ({navigation}) => {
             {items.reduce((sum, i) => sum + i.jumlah, 0)}
           </Text>
         </View>
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-          <Text style={styles.saveBtnText}>SIMPAN & MINTA IZIN</Text>
+        <TouchableOpacity
+          style={[styles.saveBtn, isLoading && styles.saveBtnDisabled]}
+          onPress={handleSave}
+          disabled={isLoading}>
+          <Text style={styles.saveBtnText}>
+            {isLoading ? 'MENYIMPAN...' : 'SIMPAN & MINTA IZIN'}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -354,6 +371,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 12,
+  },
+  saveBtnDisabled: {
+    backgroundColor: '#B0BEC5',
   },
   saveBtnText: {color: '#fff', fontWeight: 'bold', fontSize: 14},
 

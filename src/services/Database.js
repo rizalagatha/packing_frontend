@@ -244,7 +244,9 @@ export const initDB = async () => {
  * Simpan master barang bazar dengan teknik Chunking agar tidak error di data besar
  */
 export const insertMasterBarangBazar = async (items, onProgress) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   await db.executeSql('DELETE FROM bazar_barang');
 
   const batchSize = 1000;
@@ -281,7 +283,9 @@ export const insertMasterBarangBazar = async (items, onProgress) => {
         resolve,
       );
     });
-    if (onProgress) onProgress(Math.min(i + batchSize, total), total);
+    if (onProgress) {
+      onProgress(Math.min(i + batchSize, total), total);
+    }
   }
   return true;
 };
@@ -290,7 +294,9 @@ export const insertMasterBarangBazar = async (items, onProgress) => {
  * Ambil data barang bazar berdasarkan scan barcode
  */
 export const getBarangBazarByBarcode = async barcode => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const [results] = await db.executeSql(
     'SELECT * FROM bazar_barang WHERE barcode = ?',
     [barcode],
@@ -303,7 +309,9 @@ export const getBarangBazarByBarcode = async barcode => {
  * Simpan Transaksi Penjualan Bazar ke SQLite
  */
 export const saveBazarTransaction = async (header, cart) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
 
   return new Promise((resolve, reject) => {
     db.transaction(
@@ -357,7 +365,9 @@ export const saveBazarTransaction = async (header, cart) => {
  * Mencari pelanggan bazar berdasarkan Nama atau Kode
  */
 export const searchBazarCustomers = async (query = '') => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const lowerQuery = `%${query.toLowerCase()}%`;
 
   const [results] = await db.executeSql(
@@ -378,7 +388,9 @@ export const searchBazarCustomers = async (query = '') => {
  * Simpan master customer hasil download
  */
 export const insertMasterCustomerBazar = async customers => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   return new Promise((resolve, reject) => {
     db.transaction(
       tx => {
@@ -397,7 +409,9 @@ export const insertMasterCustomerBazar = async customers => {
 };
 
 export const getDefaultCustomerByCabang = async cabang => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const [results] = await db.executeSql(
     'SELECT cus_kode as kode, cus_nama as nama FROM bazar_customer WHERE cus_cab = ? LIMIT 1',
     [cabang],
@@ -412,7 +426,9 @@ export const getDefaultCustomerByCabang = async cabang => {
  * Mengambil jumlah data barang dan customer di database lokal
  */
 export const getBazarCounts = async () => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
 
   // Gunakan SELECT COUNT(barcode) agar lebih spesifik dan cepat
   const [resProd] = await db.executeSql(
@@ -436,20 +452,25 @@ export const getBazarCounts = async () => {
  * Mengambil daftar tipe produk unik (Reguler, Promo, dll)
  */
 export const getBazarTypes = async () => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const [results] = await db.executeSql(
     'SELECT DISTINCT tipe_produk FROM bazar_barang WHERE tipe_produk IS NOT NULL AND tipe_produk != ""',
   );
   let temp = [];
-  for (let i = 0; i < results.rows.length; i++)
+  for (let i = 0; i < results.rows.length; i++) {
     temp.push(results.rows.item(i).tipe_produk);
+  }
   return temp;
 };
 /**
  * Ambil data invoice yang belum terupload untuk disinkronkan ke server
  */
 export const getPendingBazarSales = async () => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const [results] = await db.executeSql(
     'SELECT * FROM bazar_sales_hdr WHERE is_uploaded = 0',
   );
@@ -462,8 +483,9 @@ export const getPendingBazarSales = async () => {
       [hdr.so_nomor],
     );
     let details = [];
-    for (let j = 0; j < dtlResults.rows.length; j++)
+    for (let j = 0; j < dtlResults.rows.length; j++) {
       details.push(dtlResults.rows.item(j));
+    }
 
     invoices.push({header: hdr, details: details});
   }
@@ -474,7 +496,9 @@ export const getPendingBazarSales = async () => {
  * Mengambil riwayat nota dari database lokal
  */
 export const getBazarSalesHistory = async () => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const [res] = await db.executeSql(
     'SELECT * FROM bazar_sales_hdr ORDER BY so_tanggal DESC',
   );
@@ -492,13 +516,17 @@ export const getBazarSalesHistory = async () => {
  * Mengambil detail lengkap satu transaksi bazar (Header + Items)
  */
 export const getBazarSaleDetail = async soNomor => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
 
   const [headers] = await db.executeSql(
     'SELECT * FROM bazar_sales_hdr WHERE so_nomor = ?',
     [soNomor],
   );
-  if (headers.rows.length === 0) return null;
+  if (headers.rows.length === 0) {
+    return null;
+  }
   const header = headers.rows.item(0);
 
   const [details] = await db.executeSql(
@@ -538,7 +566,9 @@ export const getBazarSaleDetail = async soNomor => {
  * Mencari barang bazar berdasarkan Nama atau Barcode
  */
 export const searchBazarProducts = async (query = '') => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const lowerQuery = `%${query.toLowerCase()}%`;
 
   const [results] = await db.executeSql(
@@ -563,26 +593,29 @@ export const searchBazarProductsOptimized = async (
   kategori = 'SEMUA',
   tipe = 'SEMUA',
 ) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const lowerQuery = `%${query.toLowerCase()}%`;
 
   // Base Query
-  let sql = `SELECT * FROM bazar_barang WHERE (nama LIKE ? OR barcode LIKE ? OR kode LIKE ?)`;
+  let sql =
+    'SELECT * FROM bazar_barang WHERE (nama LIKE ? OR barcode LIKE ? OR kode LIKE ?)';
   let params = [lowerQuery, lowerQuery, lowerQuery];
 
   // Logika Filter Kategori
   if (kategori !== 'SEMUA' && kategori !== '') {
-    sql += ` AND kategori_kode = ?`;
+    sql += ' AND kategori_kode = ?';
     params.push(kategori);
   }
 
   // Logika Filter Tipe Produk
   if (tipe !== 'SEMUA' && tipe !== '') {
-    sql += ` AND tipe_produk = ?`;
+    sql += ' AND tipe_produk = ?';
     params.push(tipe);
   }
 
-  sql += ` LIMIT 100`;
+  sql += ' LIMIT 100';
 
   try {
     const [results] = await db.executeSql(sql, params);
@@ -601,18 +634,23 @@ export const searchBazarProductsOptimized = async (
  * Mengambil daftar kategori unik untuk Tab Filter
  */
 export const getBazarCategories = async () => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const [results] = await db.executeSql(
     'SELECT DISTINCT kategori_kode FROM bazar_barang WHERE kategori_kode IS NOT NULL AND kategori_kode != ""',
   );
   let temp = [];
-  for (let i = 0; i < results.rows.length; i++)
+  for (let i = 0; i < results.rows.length; i++) {
     temp.push(results.rows.item(i).kategori_kode);
+  }
   return temp;
 };
 
 export const saveBazarOpname = async (header, details) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   return new Promise((resolve, reject) => {
     db.transaction(
       tx => {
@@ -640,7 +678,9 @@ export const saveBazarOpname = async (header, details) => {
 };
 
 export const getBazarOpnameHistory = async () => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const [res] = await db.executeSql(`
     SELECT h.*, d.barcode, b.nama, d.qty_fisik, d.selisih 
     FROM bazar_opname_hdr h
@@ -649,7 +689,9 @@ export const getBazarOpnameHistory = async () => {
     ORDER BY h.tanggal DESC LIMIT 50
   `);
   let temp = [];
-  for (let i = 0; i < res.rows.length; i++) temp.push(res.rows.item(i));
+  for (let i = 0; i < res.rows.length; i++) {
+    temp.push(res.rows.item(i));
+  }
   return temp;
 };
 
@@ -657,7 +699,9 @@ export const getBazarOpnameHistory = async () => {
  * Ambil semua data koreksi yang belum di-upload
  */
 export const getPendingBazarOpname = async () => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const [res] = await db.executeSql(`
     SELECT h.*, d.barcode, d.qty_sistem, d.qty_fisik, d.selisih 
     FROM bazar_opname_hdr h
@@ -676,7 +720,9 @@ export const getPendingBazarOpname = async () => {
  * Tandai data koreksi sebagai sudah ter-upload
  */
 export const markBazarOpnameUploaded = async noKoreksi => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   await db.executeSql(
     'UPDATE bazar_opname_hdr SET is_uploaded = 1 WHERE no_koreksi = ?',
     [noKoreksi],
@@ -684,7 +730,9 @@ export const markBazarOpnameUploaded = async noKoreksi => {
 };
 
 export const markBazarSalesUploaded = async soNomor => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   await db.executeSql(
     'UPDATE bazar_sales_hdr SET is_uploaded = 1 WHERE so_nomor = ?',
     [soNomor],
@@ -739,7 +787,9 @@ export const getDynamicPrice = (item, cart) => {
  * Mendapatkan Nomor Nota Berikutnya (SAL-USER-YYYYMMDD-XXX)
  */
 export const getNextBazarReceiptNumber = async (cabang, kodeKasir) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
 
   const now = new Date();
   const dateStr =
@@ -751,11 +801,13 @@ export const getNextBazarReceiptNumber = async (cabang, kodeKasir) => {
   const prefix = `${cabang}-${kodeKasir}-${dateStr}`;
 
   const [res] = await db.executeSql(
-    `SELECT so_nomor FROM bazar_sales_hdr WHERE so_nomor LIKE ? ORDER BY so_nomor DESC LIMIT 1`,
+    'SELECT so_nomor FROM bazar_sales_hdr WHERE so_nomor LIKE ? ORDER BY so_nomor DESC LIMIT 1',
     [`${prefix}%`],
   );
 
-  if (res.rows.length === 0) return `${prefix}001`;
+  if (res.rows.length === 0) {
+    return `${prefix}001`;
+  }
 
   const lastNumber = res.rows.item(0).so_nomor;
   const lastCounter = parseInt(lastNumber.slice(-3));
@@ -766,7 +818,9 @@ export const getNextBazarReceiptNumber = async (cabang, kodeKasir) => {
 
 // Tambahkan Fungsi Baru:
 export const insertMasterRekening = async rekenings => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   return new Promise((resolve, reject) => {
     db.transaction(
       tx => {
@@ -795,12 +849,16 @@ export const insertMasterRekening = async rekenings => {
 };
 
 export const getMasterRekening = async () => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const [results] = await db.executeSql(
     'SELECT * FROM bazar_rekening ORDER BY rek_nama ASC',
   );
   let temp = [];
-  for (let i = 0; i < results.rows.length; i++) temp.push(results.rows.item(i));
+  for (let i = 0; i < results.rows.length; i++) {
+    temp.push(results.rows.item(i));
+  }
   return temp;
 };
 
@@ -810,12 +868,16 @@ export const getHargaEcerAsli = item => {
   const hargaJual = parseFloat(item.harga_jual) || 0;
 
   // Jika harga spesial, maka ecer = spesial (karena tidak ada diskon lagi)
-  if (hargaSpesial > 0) return hargaSpesial;
+  if (hargaSpesial > 0) {
+    return hargaSpesial;
+  }
 
   // Jika bundling, hitung pinalti ecer (hargaJual + 5000)
   if (promoQty > 1) {
     let hargaEcer = Math.floor(100000 / promoQty) + 5000;
-    if (promoQty === 3) hargaEcer = 38500;
+    if (promoQty === 3) {
+      hargaEcer = 38500;
+    }
     return hargaEcer;
   }
 
@@ -827,7 +889,9 @@ export const getHargaEcerAsli = item => {
  * Menyimpan daftar lokasi hasil download dari server
  */
 export const insertMasterLokasi = async locations => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   return new Promise((resolve, reject) => {
     db.transaction(
       tx => {
@@ -849,7 +913,9 @@ export const insertMasterLokasi = async locations => {
  * Validasi apakah kode yang di-scan adalah lokasi yang terdaftar
  */
 export const isValidLocation = async lokasiKode => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const clean = String(lokasiKode).trim().toUpperCase();
   const [results] = await db.executeSql(
     'SELECT lo_lokasi FROM master_lokasi WHERE lo_lokasi = ?',
@@ -863,7 +929,9 @@ export const isValidLocation = async lokasiKode => {
  * Digunakan untuk syarat Unlock/Ganti Lokasi
  */
 export const checkPendingByLokasi = async (lokasi, cabang) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const clean = String(lokasi).trim().toUpperCase();
   const [results] = await db.executeSql(
     'SELECT COUNT(*) as count FROM hasil_opname WHERE lokasi = ? AND cabang = ? AND is_uploaded = 0',
@@ -877,7 +945,9 @@ export const checkPendingByLokasi = async (lokasi, cabang) => {
  * Simpan master barang Stok Opname dengan Progress (Chunking)
  */
 export const insertMasterBarang = async (items, onProgress) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
 
   // 1. Hapus data lama agar tidak duplikat
   await db.executeSql('DELETE FROM barang');
@@ -924,7 +994,9 @@ export const insertMasterBarang = async (items, onProgress) => {
 };
 
 export const getBarangByBarcode = async barcode => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   // PERBAIKAN: Bersihkan barcode yang di-scan dan ubah ke UPPERCASE
   const clean = String(barcode).trim().toUpperCase();
   const [results] = await db.executeSql(
@@ -936,7 +1008,9 @@ export const getBarangByBarcode = async barcode => {
 
 // --- FUNGSI TRANSAKSI (OPNAME) ---
 export const incrementOpnameQty = async (barcode, lokasi, cabang) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const tgl = new Date().toISOString();
 
   // CLEANUP: Hapus nol di depan dan spasi
@@ -969,7 +1043,9 @@ export const incrementOpnameQty = async (barcode, lokasi, cabang) => {
 
 // Update getPendingOpname agar kolom ini ikut terkirim ke Backend
 export const getPendingOpname = async cabang => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const [results] = await db.executeSql(
     `
       SELECT 
@@ -984,13 +1060,17 @@ export const getPendingOpname = async cabang => {
     [cabang],
   );
   let temp = [];
-  for (let i = 0; i < results.rows.length; i++) temp.push(results.rows.item(i));
+  for (let i = 0; i < results.rows.length; i++) {
+    temp.push(results.rows.item(i));
+  }
   return temp;
 };
 
 // [BARU] Fungsi tandai sudah upload
 export const markAsUploaded = async cabang => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   // Pastikan hanya update cabang yang sedang dikerjakan
   await db.executeSql(
     'UPDATE hasil_opname SET is_uploaded = 1 WHERE is_uploaded = 0 AND cabang = ?',
@@ -1000,7 +1080,9 @@ export const markAsUploaded = async cabang => {
 
 // [BARU] Fungsi Hapus Satuan (Untuk koreksi kesalahan input)
 export const deleteItemOpname = async (barcode, lokasi) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const cleanBarcode = String(barcode).trim();
   const cleanLokasi = String(lokasi).trim().toUpperCase();
   await db.executeSql(
@@ -1010,7 +1092,9 @@ export const deleteItemOpname = async (barcode, lokasi) => {
 };
 
 export const getHasilOpname = async cabang => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const [results] = await db.executeSql(
     `
     SELECT h.*, b.kode, b.nama, b.ukuran 
@@ -1023,12 +1107,16 @@ export const getHasilOpname = async cabang => {
   );
 
   let temp = [];
-  for (let i = 0; i < results.rows.length; i++) temp.push(results.rows.item(i));
+  for (let i = 0; i < results.rows.length; i++) {
+    temp.push(results.rows.item(i));
+  }
   return temp;
 };
 
 export const clearOpname = async () => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   await db.executeSql('DELETE FROM hasil_opname');
 };
 
@@ -1043,7 +1131,9 @@ export const saveUploadLog = async (
   operator,
   items,
 ) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const now = new Date().toLocaleString('id-ID');
 
   // Ubah array items menjadi string agar bisa masuk ke kolom TEXT
@@ -1057,7 +1147,9 @@ export const saveUploadLog = async (
 
 // Mengambil daftar riwayat untuk ditampilkan di modal
 export const getUploadHistory = async () => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const [results] = await db.executeSql(
     'SELECT * FROM upload_log ORDER BY id DESC',
   );
@@ -1070,7 +1162,9 @@ export const getUploadHistory = async () => {
 
 // Tambahkan di database.js
 export const decrementOpnameQty = async (barcode, lokasi, cabang) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const tgl = new Date().toISOString();
 
   // [FIX] Samakan cara bersih-bersih barcode dengan fungsi increment
@@ -1085,7 +1179,9 @@ export const decrementOpnameQty = async (barcode, lokasi, cabang) => {
 
   if (check.rows.length > 0) {
     const item = check.rows.item(0);
-    if (item.is_uploaded === 1) return false;
+    if (item.is_uploaded === 1) {
+      return false;
+    }
 
     if (item.qty_fisik > 1) {
       await db.executeSql(
@@ -1114,7 +1210,7 @@ const repairData = async () => {
     `);
 
     // 2. Hapus data lama yang berantakan
-    await db.executeSql(`DELETE FROM hasil_opname WHERE is_uploaded = 0;`);
+    await db.executeSql('DELETE FROM hasil_opname WHERE is_uploaded = 0;');
 
     // 3. Masukkan kembali dengan kolom cabang yang lengkap
     await db.executeSql(`
@@ -1122,7 +1218,7 @@ const repairData = async () => {
       SELECT barcode, qty, lokasi, cabang, tgl, uploaded FROM temp_opname;
     `);
 
-    await db.executeSql(`DROP TABLE temp_opname;`);
+    await db.executeSql('DROP TABLE temp_opname;');
     console.log(
       '✅ Database HP: Data nyangkut berhasil dirapikan (Cabang Aman).',
     );
@@ -1136,7 +1232,9 @@ const repairData = async () => {
  * agar bisa di-upload ulang ke server.
  */
 export const resetUploadStatusByLocation = async lokasi => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
 
   // Kita ubah is_uploaded dari 1 kembali ke 0
   const result = await db.executeSql(
@@ -1149,7 +1247,9 @@ export const resetUploadStatusByLocation = async lokasi => {
 
 // Tambahkan fungsi ini di Database.js
 export const cleanOldBarcodes = async () => {
-  if (!db) return;
+  if (!db) {
+    return;
+  }
   try {
     // Gunakan query yang lebih aman untuk SQLite
     await db.executeSql(`
@@ -1170,7 +1270,9 @@ export const insertPackingToOpname = async (
   noPl = '',
   noPack = '',
 ) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const tgl = new Date().toISOString();
   const cleanLokasi = String(lokasi || '')
     .trim()
@@ -1191,7 +1293,9 @@ export const insertPackingToOpname = async (
     const qty =
       parseFloat(item.packd_qty || item.qty || item.jumlah || item.Jumlah) || 0;
 
-    if (!cleanBarcode) continue;
+    if (!cleanBarcode) {
+      continue;
+    }
 
     // --- 1. Auto-save master barang (Aman dari crash) ---
     try {
@@ -1293,7 +1397,9 @@ export const checkBulkExists = async (
   cabang,
   isPl = false,
 ) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const column = isPl ? 'no_pl' : 'no_pack';
   const [res] = await db.executeSql(
     `SELECT COUNT(*) as count FROM hasil_opname WHERE ${column} LIKE ? AND lokasi = ? AND cabang = ? AND is_uploaded = 0`,
@@ -1308,7 +1414,9 @@ export const deleteBulkOpname = async (
   cabang,
   isPl = false,
 ) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const column = isPl ? 'no_pl' : 'no_pack';
   await db.executeSql(
     `DELETE FROM hasil_opname WHERE ${column} LIKE ? AND lokasi = ? AND cabang = ? AND is_uploaded = 0`,
@@ -1322,7 +1430,9 @@ export const updateOpnameQtyManual = async (
   cabang,
   newQty,
 ) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
   const tgl = new Date().toISOString();
   await db.executeSql(
     'UPDATE hasil_opname SET qty_fisik = ?, tgl_scan = ? WHERE barcode = ? AND lokasi = ? AND cabang = ? AND is_uploaded = 0',
@@ -1335,7 +1445,9 @@ export const updateOpnameQtyManual = async (
 // query perhitungan unik sebelumnya via "SELECT DISTINCT no_pack" akan gagal menghitung dengan akurat.
 // Kita harus membaca semua datanya, memecah string dengan koma, lalu menggunakan Javascript Set.
 export const getBulkSummary = async (lokasi, cabang) => {
-  if (!db) await initDB();
+  if (!db) {
+    await initDB();
+  }
 
   const cleanLokasi = String(lokasi).trim().toUpperCase();
   const cleanCabang = String(cabang).trim().toUpperCase();
@@ -1357,7 +1469,9 @@ export const getBulkSummary = async (lokasi, cabang) => {
       String(row.no_pack)
         .split(',')
         .forEach(p => {
-          if (p.trim()) packSet.add(p.trim());
+          if (p.trim()) {
+            packSet.add(p.trim());
+          }
         });
     }
 
@@ -1365,7 +1479,9 @@ export const getBulkSummary = async (lokasi, cabang) => {
       String(row.no_pl)
         .split(',')
         .forEach(p => {
-          if (p.trim()) plSet.add(p.trim());
+          if (p.trim()) {
+            plSet.add(p.trim());
+          }
         });
     }
   }

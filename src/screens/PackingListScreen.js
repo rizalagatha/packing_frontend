@@ -18,6 +18,7 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
+  Animated,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import {AuthContext} from '../context/AuthContext';
@@ -33,6 +34,77 @@ import {
   searchPermintaanOpenApi,
   getItemsFromPackingApi,
 } from '../api/ApiService';
+
+// --- KOMPONEN ANIMASI GLOWING API ---
+const AnimatedPriorityWrapper = ({isPriorityAuto, children}) => {
+  const glowAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isPriorityAuto) {
+      // Menjalankan animasi berkedip secara terus-menerus (loop)
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowAnim, {
+            toValue: 1,
+            duration: 700, // Kecepatan nyala
+            useNativeDriver: false, // Harus false karena kita menganimasi warna
+          }),
+          Animated.timing(glowAnim, {
+            toValue: 0,
+            duration: 700, // Kecepatan redup
+            useNativeDriver: false,
+          }),
+        ]),
+      ).start();
+    }
+  }, [isPriorityAuto, glowAnim]);
+
+  if (!isPriorityAuto) {
+    return <View style={styles.normalSearchItem}>{children}</View>;
+  }
+
+  // Interpolasi warna merah ke kuning emas (Efek Api)
+  const borderColorAnim = glowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#FF3D00', '#FFD600'],
+  });
+
+  // Interpolasi ketebalan bayangan (Glow)
+  const shadowRadiusAnim = glowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [2, 8],
+  });
+
+  // Interpolasi background overlay agar ikutan "bernapas"
+  const bgOpacityAnim = glowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.05, 0.15],
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.priorityCardWrapper,
+        {
+          borderColor: borderColorAnim,
+          // Shadow dihapus agar menyatu dan tidak terlihat mengambang
+        },
+      ]}>
+      {/* Overlay background yang berkedip tipis */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFillObject,
+          {
+            backgroundColor: '#FF3D00',
+            opacity: bgOpacityAnim,
+            // borderRadius dihapus agar full kotak menempel ke ujung
+          },
+        ]}
+      />
+      {children}
+    </Animated.View>
+  );
+};
 
 const PackingListScreen = ({navigation, route}) => {
   const {userToken} = useContext(AuthContext);
@@ -130,9 +202,11 @@ const PackingListScreen = ({navigation, route}) => {
         const res = await loadItemsFromRequestApi(nomorPermintaan, userToken);
         let rawItems = [];
 
-        if (Array.isArray(res.data)) rawItems = res.data;
-        else if (res.data && Array.isArray(res.data.data))
+        if (Array.isArray(res.data)) {
+          rawItems = res.data;
+        } else if (res.data && Array.isArray(res.data.data)) {
           rawItems = res.data.data;
+        }
 
         if (rawItems.length === 0) {
           Alert.alert('Info', 'Permintaan ini tidak memiliki item detail.');
@@ -185,7 +259,9 @@ const PackingListScreen = ({navigation, route}) => {
 
   // --- LOGIC GANTI MODE ---
   const handleChangeMode = newMode => {
-    if (scanMode === newMode) return;
+    if (scanMode === newMode) {
+      return;
+    }
 
     const confirmChange = () => {
       setItems([]);
@@ -352,7 +428,9 @@ const PackingListScreen = ({navigation, route}) => {
       setBarcodeInput('');
       return;
     }
-    if (!barcodeInput) return;
+    if (!barcodeInput) {
+      return;
+    }
 
     const scannedCode = barcodeInput.trim();
     if (scanMode === 'packing') {
@@ -386,11 +464,13 @@ const PackingListScreen = ({navigation, route}) => {
   };
 
   const handleSave = async () => {
-    if (!header.store.kode)
+    if (!header.store.kode) {
       return Alert.alert('Validasi', 'Store tujuan harus diisi.');
+    }
     const validItems = items.filter(i => i.jumlah > 0);
-    if (validItems.length === 0)
+    if (validItems.length === 0) {
       return Alert.alert('Validasi', 'Belum ada barang yang discan.');
+    }
 
     Alert.alert('Simpan Packing List?', 'Pastikan data benar.', [
       {text: 'Batal', style: 'cancel'},
@@ -525,76 +605,98 @@ const PackingListScreen = ({navigation, route}) => {
                   {...params, storeKode: header.store.kode},
                   userToken,
                 );
-                if (Array.isArray(res.data))
+                if (Array.isArray(res.data)) {
                   return {...res, data: {data: {items: res.data}}};
+                }
                 return res;
               }
         }
-        renderListItem={item => (
-          <View>
-            {searchMode === 'STORE' ? (
-              <>
-                <Text style={styles.itemKode}>
-                  {item.kode || item.gdg_kode}
-                </Text>
-                <Text style={styles.itemNama}>
-                  {item.nama || item.gdg_nama}
-                </Text>
-              </>
-            ) : (
-              <View>
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}>
-                  <Text style={styles.itemKode}>{item.nomor}</Text>
+        renderListItem={item => {
+          // --- [LOGIKA PRIORITAS OTOMATIS] ---
+          const isPriorityAuto =
+            (item.otomatis === 'Y' || item.otomatis === '1') &&
+            String(item.keterangan || '')
+              .toUpperCase()
+              .includes('PRIORITAS');
 
-                  {/* Badge Manual vs Otomatis */}
+          return (
+            <AnimatedPriorityWrapper isPriorityAuto={isPriorityAuto}>
+              {searchMode === 'STORE' ? (
+                <>
+                  <Text style={styles.itemKode}>
+                    {item.kode || item.gdg_kode}
+                  </Text>
+                  <Text style={styles.itemNama}>
+                    {item.nama || item.gdg_nama}
+                  </Text>
+                </>
+              ) : (
+                <View>
                   <View
-                    style={[
-                      styles.badge,
-                      {
-                        backgroundColor:
-                          item.otomatis === 'Y' || item.otomatis === '1'
-                            ? '#E8F5E9'
-                            : '#E3F2FD',
-                      },
-                    ]}>
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}>
                     <Text
                       style={[
-                        styles.badgeText,
+                        styles.itemKode,
+                        isPriorityAuto && {color: '#E65100'},
+                      ]}>
+                      {item.nomor}
+                    </Text>
+
+                    <View
+                      style={[
+                        styles.badge,
                         {
-                          color:
-                            item.otomatis === 'Y' || item.otomatis === '1'
-                              ? '#2E7D32'
-                              : '#1565C0',
+                          backgroundColor: isPriorityAuto
+                            ? '#FF3D00'
+                            : item.otomatis === 'Y' || item.otomatis === '1'
+                            ? '#E8F5E9'
+                            : '#E3F2FD',
                         },
                       ]}>
-                      {item.otomatis === 'Y' || item.otomatis === '1'
-                        ? 'AUTO'
-                        : 'MANUAL'}
-                    </Text>
+                      <Text
+                        style={[
+                          styles.badgeText,
+                          {
+                            color: isPriorityAuto
+                              ? '#FFF'
+                              : item.otomatis === 'Y' || item.otomatis === '1'
+                              ? '#2E7D32'
+                              : '#1565C0',
+                          },
+                        ]}>
+                        {isPriorityAuto
+                          ? 'PRIORITAS AUTO'
+                          : item.otomatis === 'Y' || item.otomatis === '1'
+                          ? 'AUTO'
+                          : 'MANUAL'}
+                      </Text>
+                    </View>
                   </View>
-                </View>
 
-                <Text style={styles.itemNama}>
-                  Tgl: {item.tanggal ? item.tanggal.split('T')[0] : '-'}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontStyle: 'italic',
-                    color: '#666',
-                    marginTop: 2,
-                  }}>
-                  {item.keterangan || 'Tanpa Keterangan'}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
+                  <Text style={styles.itemNama}>
+                    Tgl: {item.tanggal ? item.tanggal.split('T')[0] : '-'}
+                  </Text>
+                  <Text
+                    style={[
+                      {
+                        fontSize: 12,
+                        fontStyle: 'italic',
+                        color: '#666',
+                        marginTop: 2,
+                      },
+                      isPriorityAuto && {color: '#BF360C', fontWeight: 'bold'},
+                    ]}>
+                    {item.keterangan || 'Tanpa Keterangan'}
+                  </Text>
+                </View>
+              )}
+            </AnimatedPriorityWrapper>
+          );
+        }}
         onSelect={item => {
           if (searchMode === 'STORE') {
             setHeader(prev => ({
@@ -680,8 +782,9 @@ const PackingListScreen = ({navigation, route}) => {
             <TouchableOpacity
               style={[styles.inputBox, {flex: 0.8}]}
               onPress={() => {
-                if (!header.store.kode)
+                if (!header.store.kode) {
                   return Toast.show({type: 'error', text1: 'Pilih Store Dulu'});
+                }
                 setSearchMode('PERMINTAAN');
                 setIsSearchVisible(true);
               }}
@@ -965,6 +1068,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 999,
+  },
+
+  // --- Tambahkan ini di dalam StyleSheet.create ---
+  normalSearchItem: {
+    paddingVertical: 4,
+  },
+  priorityCardWrapper: {
+    backgroundColor: '#FFF',
+    borderWidth: 2,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    width: '100%',
   },
 });
 

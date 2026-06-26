@@ -39,13 +39,15 @@ const BazarSyncScreen = () => {
     const counts = await DB.getBazarCounts(); // Mengambil {products, customers, accounts}
     const pendingSales = await DB.getPendingBazarSales();
 
-    if (time) setLastSync(time);
+    if (time) {
+      setLastSync(time);
+    }
 
     setItemCount({
       prod: counts.products,
       cust: counts.customers,
       pending: pendingSales.length,
-      rek: counts.accounts, // <--- TAMBAHKAN BARIS INI
+      rek: counts.accounts,
     });
   };
 
@@ -108,8 +110,9 @@ const BazarSyncScreen = () => {
                 userToken,
                 userInfo.cabang,
               );
-              if (!resDownload.data.success)
+              if (!resDownload.data.success) {
                 throw new Error('Gagal ambil data master');
+              }
 
               const {products, customers, rekening} = resDownload.data.data;
 
@@ -149,7 +152,7 @@ const BazarSyncScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={{padding: 20}}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.headerCard}>
           <Icon name="refresh-cw" size={40} color="#E91E63" />
           <Text style={styles.headerTitle}>Manajemen Data Bazar</Text>
@@ -170,14 +173,14 @@ const BazarSyncScreen = () => {
             <Text
               style={[
                 styles.value,
-                itemCount.pending > 0 && {color: '#E91E63'},
+                itemCount.pending > 0 && styles.pendingValue,
               ]}>
               {itemCount.pending} Nota
             </Text>
           </View>
 
           {/* TAMBAHAN STATS REKENING */}
-          <View style={[styles.row, {marginTop: 15}]}>
+          <View style={[styles.row, styles.rowMarginTop]}>
             <Text style={styles.label}>Master Rekening/EDC</Text>
             <Text style={styles.value}>{itemCount.rek || 0} Akun</Text>
           </View>
@@ -221,7 +224,7 @@ const BazarSyncScreen = () => {
                   name="upload-cloud"
                   size={20}
                   color="#fff"
-                  style={{marginRight: 10}}
+                  style={styles.buttonIcon}
                 />
                 <View>
                   <Text style={styles.btnText}>UPLOAD PENJUALAN</Text>
@@ -251,7 +254,7 @@ const BazarSyncScreen = () => {
                   name="download-cloud"
                   size={20}
                   color="#fff"
-                  style={{marginRight: 10}}
+                  style={styles.buttonIcon}
                 />
                 <View>
                   <Text style={styles.btnText}>DOWNLOAD MASTER</Text>
@@ -326,6 +329,21 @@ const styles = StyleSheet.create({
     marginTop: 25,
     fontStyle: 'italic',
     paddingHorizontal: 20,
+  },
+  scrollContent: {
+    padding: 20,
+  },
+
+  pendingValue: {
+    color: '#E91E63',
+  },
+
+  rowMarginTop: {
+    marginTop: 15,
+  },
+
+  buttonIcon: {
+    marginRight: 10,
   },
 });
 

@@ -197,7 +197,9 @@ const TerimaSjScreen = ({navigation}) => {
 
   // Fungsi saat user scan barcode barang
   const handleBarcodeScan = () => {
-    if (!scannedBarcode) return;
+    if (!scannedBarcode) {
+      return;
+    }
     const barcodeToFind = scannedBarcode;
 
     const itemIndex = items.findIndex(item => item.barcode === barcodeToFind);
@@ -210,7 +212,7 @@ const TerimaSjScreen = ({navigation}) => {
         setItems(newItems);
         Toast.show({
           type: 'success',
-          text1: `Scan Berhasil`,
+          text1: 'Scan Berhasil',
           text2: `${currentItem.nama}`,
         });
         playSound('success');
@@ -245,7 +247,7 @@ const TerimaSjScreen = ({navigation}) => {
       const soundName = type === 'success' ? 'beep_success' : 'beep_error';
       SoundPlayer.playSoundFile(soundName, 'mp3');
     } catch (e) {
-      console.log(`Tidak bisa memutar suara`, e);
+      console.log('Tidak bisa memutar suara', e);
     }
   };
 
@@ -263,7 +265,9 @@ const TerimaSjScreen = ({navigation}) => {
 
   const deadlineStatus = useMemo(() => {
     // Pastikan data tersedia sebelum menghitung
-    if (!sjHeader || !userInfo?.cabang) return null;
+    if (!sjHeader || !userInfo?.cabang) {
+      return null;
+    }
 
     const tglSj = new Date(sjHeader.sj_tanggal);
     const tglSekarang = new Date();

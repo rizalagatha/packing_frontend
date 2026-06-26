@@ -44,7 +44,9 @@ const getStatusColor = status => {
 };
 
 const formatDateDisplay = dateString => {
-  if (!dateString) return '-';
+  if (!dateString) {
+    return '-';
+  }
   const date = new Date(dateString);
   return date.toLocaleDateString('id-ID', {
     day: 'numeric',
@@ -104,7 +106,9 @@ const RiwayatPackingListScreen = ({navigation}) => {
     setActiveQuickFilter(days);
     const end = new Date();
     const start = new Date();
-    if (days > 0) start.setDate(end.getDate() - days);
+    if (days > 0) {
+      start.setDate(end.getDate() - days);
+    }
 
     setStartDate(start);
     setEndDate(end);

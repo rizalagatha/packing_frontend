@@ -120,7 +120,9 @@ const PaymentModal = ({visible, total, onClose, onFinish}) => {
                   key={m}
                   onPress={() => {
                     setMethod(m);
-                    if (m === 'CARD') setPayAmount(total.toString());
+                    if (m === 'CARD') {
+                      setPayAmount(total.toString());
+                    }
                   }}
                   style={[styles.tab, method === m && styles.tabActive]}>
                   <Text
@@ -165,18 +167,16 @@ const PaymentModal = ({visible, total, onClose, onFinish}) => {
                       <Text
                         style={[
                           styles.bankName,
-                          selectedRek?.rek_nomor === rek.rek_nomor && {
-                            color: '#fff',
-                          },
+                          selectedRek?.rek_nomor === rek.rek_nomor &&
+                            styles.bankNameActive,
                         ]}>
                         {rek.rek_nama}
                       </Text>
                       <Text
                         style={[
                           styles.bankNumber,
-                          selectedRek?.rek_nomor === rek.rek_nomor && {
-                            color: '#eee',
-                          },
+                          selectedRek?.rek_nomor === rek.rek_nomor &&
+                            styles.bankNumberActive,
                         ]}>
                         {rek.rek_nomor}
                       </Text>
@@ -210,7 +210,7 @@ const PaymentModal = ({visible, total, onClose, onFinish}) => {
                       <Text
                         style={[
                           styles.keyText,
-                          key === 'PAS' && {color: '#fff'},
+                          key === 'PAS' && styles.keyTextWhite,
                         ]}>
                         {key}
                       </Text>
@@ -225,7 +225,7 @@ const PaymentModal = ({visible, total, onClose, onFinish}) => {
               <Text
                 style={[
                   styles.changeValue,
-                  {color: change < 0 ? '#F44336' : '#2E7D32'},
+                  change < 0 ? styles.changeNegative : styles.changePositive,
                 ]}>
                 Rp {formatNumber(method === 'CASH' ? Math.max(0, change) : 0)}
               </Text>
@@ -333,6 +333,22 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   btnDoneText: {color: '#fff', fontWeight: 'bold', fontSize: 16},
+  bankNameActive: {
+    color: '#fff',
+  },
+  bankNumberActive: {
+    color: '#eee',
+  },
+  keyTextWhite: {
+    color: '#fff',
+  },
+  changeNegative: {
+    color: '#F44336',
+  },
+
+  changePositive: {
+    color: '#2E7D32',
+  },
 });
 
 export default PaymentModal;

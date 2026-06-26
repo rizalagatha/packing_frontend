@@ -52,18 +52,30 @@ const StockCard = React.memo(({item, gudangAktif}) => {
         const idxA = SIZE_ORDER.indexOf(a.toUpperCase());
         const idxB = SIZE_ORDER.indexOf(b.toUpperCase());
 
-        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-        if (idxA !== -1) return -1;
-        if (idxB !== -1) return 1;
+        if (idxA !== -1 && idxB !== -1) {
+          return idxA - idxB;
+        }
+        if (idxA !== -1) {
+          return -1;
+        }
+        if (idxB !== -1) {
+          return 1;
+        }
         return a.localeCompare(b);
       });
   }, [item]);
 
   // 3. Helper Warna Stok
   const getQtyColor = qty => {
-    if (qty <= 0) return '#999'; // Abu-abu jika kosong
-    if (qty <= 3) return '#D32F2F'; // Merah jika kritis (<= 3)
-    if (qty <= 10) return '#F57C00'; // Oranye jika menipis (4 - 10)
+    if (qty <= 0) {
+      return '#999';
+    } // Abu-abu jika kosong
+    if (qty <= 3) {
+      return '#D32F2F';
+    } // Merah jika kritis (<= 3)
+    if (qty <= 10) {
+      return '#F57C00';
+    } // Oranye jika menipis (4 - 10)
     return '#1565C0'; // Biru jika aman (> 10)
   };
 

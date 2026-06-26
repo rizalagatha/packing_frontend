@@ -153,7 +153,9 @@ const PackingHistoryScreen = ({navigation}) => {
 
         setHistory(prev => {
           // Jika halaman 1, langsung pakai data baru
-          if (page === 1) return newData;
+          if (page === 1) {
+            return newData;
+          }
 
           // Gabungkan data lama dan baru
           const combined = [...prev, ...newData];

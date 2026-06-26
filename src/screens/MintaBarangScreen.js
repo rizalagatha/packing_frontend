@@ -89,7 +89,9 @@ const MintaBarangScreen = ({navigation, route}) => {
   };
 
   const handleScan = async () => {
-    if (!scannedValue) return;
+    if (!scannedValue) {
+      return;
+    }
     const barcode = scannedValue;
     setScannedValue('');
 
@@ -134,7 +136,9 @@ const MintaBarangScreen = ({navigation, route}) => {
     }
 
     const qty = parseInt(text);
-    if (isNaN(qty)) return; // Abaikan karakter non-angka
+    if (isNaN(qty)) {
+      return;
+    } // Abaikan karakter non-angka
 
     setItems(prev =>
       prev.map(item => {

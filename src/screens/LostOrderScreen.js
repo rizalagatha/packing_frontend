@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   RefreshControl,
   SafeAreaView,
-  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import DatePicker from 'react-native-date-picker'; // <--- Menggunakan DatePicker baru
@@ -23,15 +22,21 @@ const formatDateForApi = date => {
   let day = '' + d.getDate();
   const year = d.getFullYear();
 
-  if (month.length < 2) month = '0' + month;
-  if (day.length < 2) day = '0' + day;
+  if (month.length < 2) {
+    month = '0' + month;
+  }
+  if (day.length < 2) {
+    day = '0' + day;
+  }
 
   return [year, month, day].join('-');
 };
 
 // Helper Format Tanggal Tampil di List (DD MMM YYYY, HH:mm)
 const formatDisplayDate = dateString => {
-  if (!dateString) return '-';
+  if (!dateString) {
+    return '-';
+  }
   const d = new Date(dateString);
   return d.toLocaleString('id-ID', {
     day: '2-digit',
@@ -135,22 +140,18 @@ const LostOrderScreen = () => {
                 name="tag"
                 size={12}
                 color="#1976D2"
-                style={{marginRight: 4}}
+                style={styles.iconMarginRight}
               />
               <Text style={styles.badgeInfoText}>Ukuran: {item.lo_ukuran}</Text>
             </View>
-            <View
-              style={[
-                styles.badgeInfo,
-                {backgroundColor: '#FFF3E0', borderColor: '#FFE0B2'},
-              ]}>
+            <View style={[styles.badgeInfo, styles.warningBadge]}>
               <Icon
                 name="box"
                 size={12}
                 color="#F57C00"
-                style={{marginRight: 4}}
+                style={styles.iconMarginRight}
               />
-              <Text style={[styles.badgeInfoText, {color: '#E65100'}]}>
+              <Text style={[styles.badgeInfoText, styles.warningBadgeText]}>
                 Qty: {item.lo_qty}
               </Text>
             </View>
@@ -189,7 +190,7 @@ const LostOrderScreen = () => {
               {startDate.toLocaleDateString('id-ID')}
             </Text>
           </TouchableOpacity>
-          <Text style={{color: '#555', marginHorizontal: 5}}>-</Text>
+          <Text style={styles.separatorText}>-</Text>
           <TouchableOpacity
             style={styles.dateButton}
             onPress={() => setOpenEndPicker(true)}>
@@ -252,7 +253,7 @@ const LostOrderScreen = () => {
               <ActivityIndicator
                 size="small"
                 color="#E91E63"
-                style={{marginVertical: 15}}
+                style={styles.loadingFooter}
               />
             ) : null
           }
@@ -406,6 +407,27 @@ const styles = StyleSheet.create({
     marginTop: 15,
     fontSize: 14,
     color: '#999',
+  },
+  iconMarginRight: {
+    marginRight: 4,
+  },
+
+  warningBadge: {
+    backgroundColor: '#FFF3E0',
+    borderColor: '#FFE0B2',
+  },
+
+  warningBadgeText: {
+    color: '#E65100',
+  },
+
+  separatorText: {
+    color: '#555',
+    marginHorizontal: 5,
+  },
+
+  loadingFooter: {
+    marginVertical: 15,
   },
 });
 

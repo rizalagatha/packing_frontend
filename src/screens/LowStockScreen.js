@@ -54,7 +54,9 @@ const LowStockScreen = ({navigation}) => {
   }, [isKDC, userInfo]);
 
   const fetchLowStock = useCallback(async () => {
-    if (!selectedStore) return;
+    if (!selectedStore) {
+      return;
+    }
     setIsLoading(true);
     setSelectedItemsMap(new Map()); // Reset pilihan saat load ulang
     try {
@@ -75,8 +77,11 @@ const LowStockScreen = ({navigation}) => {
   }, [selectedStore, userToken]);
 
   useEffect(() => {
-    if (selectedStore) fetchLowStock();
-    else setItems([]);
+    if (selectedStore) {
+      fetchLowStock();
+    } else {
+      setItems([]);
+    }
   }, [selectedStore, fetchLowStock]);
 
   // --- HANDLER ITEM CLICK (OPEN QTY MODAL) ---
@@ -227,7 +232,7 @@ const LowStockScreen = ({navigation}) => {
           )}
         </View>
 
-        <View style={{flex: 1}}>
+        <View style={styles.flex1}>
           <View style={styles.itemHeader}>
             <Text style={styles.itemName} numberOfLines={2}>
               {item.nama}
@@ -238,13 +243,13 @@ const LowStockScreen = ({navigation}) => {
           <View style={styles.itemStatsRow}>
             <View style={styles.statBox}>
               <Text style={styles.statLabel}>Toko</Text>
-              <Text style={[styles.statValue, {color: '#D32F2F'}]}>
+              <Text style={[styles.statValue, styles.dangerText]}>
                 {item.stok_real}
               </Text>
             </View>
             <View style={styles.statBox}>
               <Text style={styles.statLabel}>DC</Text>
-              <Text style={[styles.statValue, {color: '#388E3C'}]}>
+              <Text style={[styles.statValue, styles.successText]}>
                 {item.stok_dc}
               </Text>
             </View>
@@ -254,7 +259,7 @@ const LowStockScreen = ({navigation}) => {
             </View>
             <View style={styles.statBox}>
               <Text style={styles.statLabel}>Avg</Text>
-              <Text style={[styles.statValue, {color: '#007bff'}]}>
+              <Text style={[styles.statValue, styles.primaryText]}>
                 {Math.ceil(item.avg_sales)}
               </Text>
             </View>
@@ -279,7 +284,7 @@ const LowStockScreen = ({navigation}) => {
         keyField="kode"
         renderListItem={item => (
           <View>
-            <Text style={{fontWeight: 'bold'}}>{item.kode}</Text>
+            <Text style={styles.boldText}>{item.kode}</Text>
             <Text>{item.nama}</Text>
           </View>
         )}
@@ -352,11 +357,7 @@ const LowStockScreen = ({navigation}) => {
             <Icon name="chevron-down" size={20} color="#757575" />
           </TouchableOpacity>
         ) : (
-          <View
-            style={[
-              styles.lookupButton,
-              {backgroundColor: '#e0e0e0', borderColor: 'transparent'},
-            ]}>
+          <View style={[styles.lookupButton, styles.disabledLookup]}>
             <Icon name="home" size={20} color="#616161" />
             <Text style={styles.lookupText}>
               {userInfo.cabang} - {userInfo.nama}
@@ -369,14 +370,14 @@ const LowStockScreen = ({navigation}) => {
         <ActivityIndicator
           size="large"
           color="#D32F2F"
-          style={{marginTop: 50}}
+          style={styles.loadingIndicator}
         />
       ) : (
         <FlatList
           data={items}
           renderItem={renderItem}
           keyExtractor={item => `${item.kode}-${item.ukuran}`}
-          contentContainerStyle={{paddingBottom: 100}}
+          contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <Text style={styles.emptyText}>
               {isKDC && !selectedStore
@@ -395,10 +396,7 @@ const LowStockScreen = ({navigation}) => {
             </Text>
           </View>
           <TouchableOpacity
-            style={[
-              styles.button,
-              isProcessing && {backgroundColor: '#B71C1C'},
-            ]}
+            style={[styles.button, isProcessing && styles.buttonProcessing]}
             onPress={handleProcessAction}
             disabled={isProcessing}>
             {isProcessing ? (
@@ -409,7 +407,7 @@ const LowStockScreen = ({navigation}) => {
                   name="check-circle"
                   size={20}
                   color="#fff"
-                  style={{marginRight: 10}}
+                  style={styles.iconMarginRight}
                 />
                 <Text style={styles.buttonText}>Proses Permintaan</Text>
               </>
@@ -595,6 +593,46 @@ const styles = StyleSheet.create({
   },
   btnTextCancel: {color: '#333', fontWeight: 'bold'},
   btnTextSave: {color: '#fff', fontWeight: 'bold'},
+  flex1: {
+    flex: 1,
+  },
+
+  dangerText: {
+    color: '#D32F2F',
+  },
+
+  successText: {
+    color: '#388E3C',
+  },
+
+  primaryText: {
+    color: '#007bff',
+  },
+
+  boldText: {
+    fontWeight: 'bold',
+  },
+
+  disabledLookup: {
+    backgroundColor: '#e0e0e0',
+    borderColor: 'transparent',
+  },
+
+  loadingIndicator: {
+    marginTop: 50,
+  },
+
+  listContent: {
+    paddingBottom: 100,
+  },
+
+  buttonProcessing: {
+    backgroundColor: '#B71C1C',
+  },
+
+  iconMarginRight: {
+    marginRight: 10,
+  },
 });
 
 export default LowStockScreen;
