@@ -124,23 +124,24 @@ const AnimatedBar = ({percentage, color, height = 10, style}) => {
     <View
       style={[
         style,
+        styles.progressBarContainer,
         {
           height,
-          backgroundColor: '#E0E0E0',
           borderRadius: height / 2,
-          overflow: 'hidden',
         },
       ]}>
       <Animated.View
-        style={{
-          height: '100%',
-          backgroundColor: color,
-          borderRadius: height / 2,
-          width: widthAnim.interpolate({
-            inputRange: [0, 100],
-            outputRange: ['0%', '100%'],
-          }),
-        }}
+        style={[
+          styles.fullHeight,
+          {
+            backgroundColor: color,
+            borderRadius: height / 2,
+            width: widthAnim.interpolate({
+              inputRange: [0, 100],
+              outputRange: ['0%', '100%'],
+            }),
+          },
+        ]}
       />
     </View>
   );
@@ -175,12 +176,7 @@ const AuthItem = React.memo(
         <View style={styles.authContent}>
           {/* 1. NOMOR INVOICE (o_transaksi) */}
           {item.o_transaksi ? (
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                marginBottom: 4,
-              }}>
+            <View style={styles.rowCenterMb4}>
               <Icon
                 name="file-text"
                 size={12}
@@ -193,21 +189,14 @@ const AuthItem = React.memo(
 
           {/* 2. BARCODE (o_barcode) - Jika Ada */}
           {item.o_barcode && item.o_barcode !== '' ? (
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                marginBottom: 4,
-              }}>
+            <View style={styles.rowCenterMb4}>
               <Icon
                 name="maximize"
                 size={12}
                 color="#555"
                 style={styles.marginRight4}
               />
-              <Text style={{fontSize: 12, color: '#555'}}>
-                {item.o_barcode}
-              </Text>
+              <Text style={styles.textGray12}>{item.o_barcode}</Text>
             </View>
           ) : null}
 
@@ -219,7 +208,7 @@ const AuthItem = React.memo(
           )}
 
           {isBorrowing ? (
-            <Text style={[styles.authNominalText, {color: '#2E7D32'}]}>
+            <Text style={[styles.authNominalText, styles.textSuccess]}>
               Total Pinjam: {item.o_nominal} Pcs
             </Text>
           ) : (
@@ -282,14 +271,14 @@ const BranchGroup = React.memo(
           style={[styles.branchHeader, isExpanded && styles.branchHeaderActive]}
           onPress={() => onToggle(item.branch)}
           activeOpacity={0.7}>
-          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+          <View style={styles.rowCenter}>
             <View style={styles.branchIconBg}>
               <Icon name="map-pin" size={16} color="#fff" />
             </View>
             <Text style={styles.branchTitle}>{item.branchName}</Text>
           </View>
 
-          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+          <View style={styles.rowCenter}>
             <View style={styles.countBadge}>
               <Text style={styles.countText}>{count}</Text>
             </View>
@@ -344,7 +333,7 @@ const BranchSelectorModal = ({
             <Text style={styles.bottomSheetTitle}>Pilih Cabang</Text>
           </View>
 
-          <ScrollView contentContainerStyle={{padding: 20}}>
+          <ScrollView contentContainerStyle={styles.padding20}>
             {/* Opsi SEMUA */}
             <TouchableOpacity
               style={[
@@ -352,13 +341,11 @@ const BranchSelectorModal = ({
                 selected === 'ALL' && styles.branchOptionActive,
               ]}
               onPress={() => onSelect('ALL')}>
-              <View style={{flexDirection: 'row', alignItems: 'center'}}>
+              <View style={styles.rowCenter}>
                 <View
                   style={[
                     styles.branchIcon,
-                    selected === 'ALL'
-                      ? {backgroundColor: '#fff'}
-                      : {backgroundColor: '#E3F2FD'},
+                    selected === 'ALL' ? styles.bgWhite : styles.bgBlue50,
                   ]}>
                   <Icon
                     name="grid"
@@ -405,22 +392,13 @@ const BranchSelectorModal = ({
                     isSelected && styles.branchOptionActive,
                   ]}
                   onPress={() => onSelect(kode)}>
-                  <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                  <View style={styles.rowCenter}>
                     <View
                       style={[
                         styles.branchIcon,
-                        isSelected
-                          ? {backgroundColor: '#fff'}
-                          : {backgroundColor: '#F5F5F5'},
+                        isSelected ? styles.bgWhite : styles.bgGray100,
                       ]}>
-                      <Text
-                        style={{
-                          fontWeight: 'bold',
-                          color: '#1565C0',
-                          fontSize: 12,
-                        }}>
-                        {kode}
-                      </Text>
+                      <Text style={styles.branchCodeText}>{kode}</Text>
                     </View>
                     <View style={styles.marginLeft12}>
                       <Text
@@ -433,7 +411,7 @@ const BranchSelectorModal = ({
                       <Text
                         style={[
                           styles.branchOptionSub,
-                          isSelected && {color: 'rgba(255,255,255,0.8)'},
+                          isSelected && styles.textWhite80,
                         ]}>
                         Kode: {kode}
                       </Text>
@@ -561,8 +539,8 @@ const ManagementDashboardScreen = ({navigation}) => {
   const [emptyStockModalVisible, setEmptyStockModalVisible] = useState(false);
   const [emptyStockList, setEmptyStockList] = useState([]);
   const [loadingEmptyStock, setLoadingEmptyStock] = useState(false);
-  const [emptyStockSearch, setEmptyStockSearch] = useState('');
-  const [emptyStockBranchFilter, setEmptyStockBranchFilter] = useState(''); // Untuk filter KDC
+  // const [emptyStockSearch, setEmptyStockSearch] = useState('');
+  // const [setEmptyStockBranchFilter] = useState(''); // Untuk filter KDC
 
   const [modalType, setModalType] = useState('SALES');
 
@@ -581,7 +559,7 @@ const ManagementDashboardScreen = ({navigation}) => {
   const [loadingVisitor, setLoadingVisitor] = useState(false);
 
   const isMounted = useRef(true);
-  const isHaris = userInfo?.kode?.toUpperCase() === 'HARIS';
+  // const isHaris = userInfo?.kode?.toUpperCase() === 'HARIS';
 
   useEffect(() => {
     return () => {
@@ -684,7 +662,7 @@ const ManagementDashboardScreen = ({navigation}) => {
       // [FIX] Gunakan showSidebar, bukan isHaris
       headerLeft: showSidebar
         ? () => (
-            <TouchableOpacity onPress={openDrawer} style={{marginLeft: 15}}>
+            <TouchableOpacity onPress={openDrawer} style={styles.marginLeft15}>
               <Icon name="menu" size={24} color="#333" />
             </TouchableOpacity>
           )
@@ -1283,30 +1261,30 @@ const ManagementDashboardScreen = ({navigation}) => {
   );
 
   // Handler Saat Produk Diklik
-  const handleCheckStock = async item => {
-    setSelectedProductItem(item);
-    setStockModalVisible(true);
-    setLoadingStockSpread(true);
-    setStockSpreadList([]);
+  // const handleCheckStock = async item => {
+  //   setSelectedProductItem(item);
+  //   setStockModalVisible(true);
+  //   setLoadingStockSpread(true);
+  //   setStockSpreadList([]);
 
-    try {
-      // Panggil API Cek Stok (Kirim Kode & Ukuran)
-      const res = await getDashboardStockSpreadApi(
-        item.KODE,
-        item.UKURAN,
-        userToken,
-      );
-      if (isMounted.current) {
-        setStockSpreadList(res.data.data || []);
-      }
-    } catch (error) {
-      Alert.alert('Gagal', 'Gagal memuat data stok.');
-    } finally {
-      if (isMounted.current) {
-        setLoadingStockSpread(false);
-      }
-    }
-  };
+  //   try {
+  //     // Panggil API Cek Stok (Kirim Kode & Ukuran)
+  //     const res = await getDashboardStockSpreadApi(
+  //       item.KODE,
+  //       item.UKURAN,
+  //       userToken,
+  //     );
+  //     if (isMounted.current) {
+  //       setStockSpreadList(res.data.data || []);
+  //     }
+  //   } catch (error) {
+  //     Alert.alert('Gagal', 'Gagal memuat data stok.');
+  //   } finally {
+  //     if (isMounted.current) {
+  //       setLoadingStockSpread(false);
+  //     }
+  //   }
+  // };
 
   // Handler 1: Untuk Top Product (Melihat Penjualan - HIJAU)
   const handleCheckSalesDetail = async item => {
@@ -1362,23 +1340,23 @@ const ManagementDashboardScreen = ({navigation}) => {
   };
 
   // Function Fetch
-  const fetchTrends = useCallback(
-    async (filter = 'ALL') => {
-      try {
-        const res = await getDashboardTrendsApi(userToken, filter);
-        if (isMounted.current) {
-          setTrends(res.data.data || {kain: [], lengan: []});
-          setLoadingTrends(false);
-        }
-      } catch (error) {
-        console.log('Err Trends:', error.message);
-        if (isMounted.current) {
-          setLoadingTrends(false);
-        }
-      }
-    },
-    [userToken],
-  );
+  // const fetchTrends = useCallback(
+  //   async (filter = 'ALL') => {
+  //     try {
+  //       const res = await getDashboardTrendsApi(userToken, filter);
+  //       if (isMounted.current) {
+  //         setTrends(res.data.data || {kain: [], lengan: []});
+  //         setLoadingTrends(false);
+  //       }
+  //     } catch (error) {
+  //       console.log('Err Trends:', error.message);
+  //       if (isMounted.current) {
+  //         setLoadingTrends(false);
+  //       }
+  //     }
+  //   },
+  //   [userToken],
+  // );
 
   // Function Load Data
   // 1. Fetch Stok Kosong (Dipanggil oleh Modal)
@@ -1409,15 +1387,15 @@ const ManagementDashboardScreen = ({navigation}) => {
   );
 
   // Handler Buka Menu
-  const handleOpenEmptyStock = () => {
-    closeDrawer();
-    setEmptyStockModalVisible(true);
-    // Reset Filter & Load awal (Default ke K01 jika KDC)
-    setEmptyStockBranchFilter(
-      userInfo.cabang === 'KDC' ? 'K01' : userInfo.cabang,
-    );
-    fetchEmptyStock('', userInfo.cabang === 'KDC' ? 'K01' : userInfo.cabang);
-  };
+  // const handleOpenEmptyStock = () => {
+  //   closeDrawer();
+  //   setEmptyStockModalVisible(true);
+  //   // Reset Filter & Load awal (Default ke K01 jika KDC)
+  //   setEmptyStockBranchFilter(
+  //     userInfo.cabang === 'KDC' ? 'K01' : userInfo.cabang,
+  //   );
+  //   fetchEmptyStock('', userInfo.cabang === 'KDC' ? 'K01' : userInfo.cabang);
+  // };
 
   // --- RENDER COMPONENTS ---
 
@@ -1434,7 +1412,7 @@ const ManagementDashboardScreen = ({navigation}) => {
         {showSidebar && (
           <TouchableOpacity
             onPress={openDrawer}
-            style={[styles.headerIconBg, {marginLeft: 10}]}>
+            style={[styles.headerIconBg, styles.marginLeft10]}>
             <Icon name="menu" size={24} color="#fff" />
           </TouchableOpacity>
         )}
@@ -1443,7 +1421,7 @@ const ManagementDashboardScreen = ({navigation}) => {
       <View style={styles.omsetContainer}>
         <Text style={styles.omsetLabel}>Omset Hari Ini</Text>
         {loadingStats ? (
-          <ActivityIndicator color="#fff" style={{alignSelf: 'flex-start'}} />
+          <ActivityIndicator color="#fff" style={styles.alignSelfStart} />
         ) : (
           <CountUp
             value={todayStats.sales}
@@ -1456,7 +1434,7 @@ const ManagementDashboardScreen = ({navigation}) => {
       <View style={styles.headerStatsRow}>
         <View style={styles.headerStatItem}>
           <Icon name="package" size={14} color="#BBDEFB" />
-          <View style={{flexDirection: 'row'}}>
+          <View style={styles.row}>
             <CountUp value={todayStats.qty} style={styles.headerStatValue} />
             <Text style={styles.headerStatValue}> Pcs</Text>
           </View>
@@ -1465,7 +1443,7 @@ const ManagementDashboardScreen = ({navigation}) => {
 
         <View style={styles.headerStatItem}>
           <Icon name="shopping-cart" size={14} color="#BBDEFB" />
-          <View style={{flexDirection: 'row'}}>
+          <View style={styles.row}>
             <CountUp value={todayStats.trx} style={styles.headerStatValue} />
             <Text style={styles.headerStatValue}> Trx</Text>
           </View>
@@ -1479,7 +1457,7 @@ const ManagementDashboardScreen = ({navigation}) => {
           onPress={handleOpenVisitorStats}
           activeOpacity={0.7}>
           <Icon name="users" size={14} color="#BBDEFB" />
-          <View style={{flexDirection: 'row'}}>
+          <View style={styles.row}>
             {loadingStats ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
@@ -1518,7 +1496,7 @@ const ManagementDashboardScreen = ({navigation}) => {
           }}>
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <View style={[styles.iconBox, {backgroundColor: '#FFF3E0'}]}>
+              <View style={[styles.iconBox, styles.bgOrange50]}>
                 <Icon name="clock" size={20} color="#F57C00" />
               </View>
               <View style={styles.flex1}>
@@ -1531,14 +1509,14 @@ const ManagementDashboardScreen = ({navigation}) => {
               </View>
               <Icon name="chevron-right" size={20} color="#CCC" />
             </View>
-            <Text style={[styles.bigValue, {color: '#E65100', marginTop: 5}]}>
+            <Text style={[styles.bigValue, styles.bigValueOrange]}>
               {loadingPiutang ? (
                 <ActivityIndicator size="small" color="#E65100" />
               ) : (
                 <CountUp
                   value={piutang}
                   formatter={formatRupiah}
-                  style={[styles.bigValue, {color: '#E65100', marginTop: 5}]}
+                  style={[styles.bigValue, styles.bigValueOrange]}
                 />
               )}
             </Text>
@@ -1562,16 +1540,12 @@ const ManagementDashboardScreen = ({navigation}) => {
           Tren & Target (
           {dashboardBranchFilter === 'ALL' ? 'Semua' : dashboardBranchFilter})
         </Text>
-        <View
-          style={[
-            styles.card,
-            {padding: 0, paddingVertical: 10, minHeight: 220},
-          ]}>
+        <View style={[styles.card, styles.chartCard]}>
           {loadingChart ? (
             <ActivityIndicator
               size="large"
               color="#1976D2"
-              style={{marginTop: 80}}
+              style={styles.loadingChart}
             />
           ) : (
             <LineChart
@@ -1595,18 +1569,20 @@ const ManagementDashboardScreen = ({navigation}) => {
                 propsForDots: {r: '4', strokeWidth: '2', stroke: '#1976D2'},
               }}
               bezier
-              style={{marginVertical: 8, borderRadius: 16}}
-              formatYLabel={val =>
-                parseInt(val) >= 1000000
-                  ? (parseInt(val) / 1000000).toFixed(1) + 'jt'
-                  : parseInt(val)
-              }
+              style={styles.chartStyle}
+              formatYLabel={val => {
+                const value = parseInt(val, 10);
+
+                return value >= 1000000
+                  ? `${(value / 1000000).toFixed(1)}jt`
+                  : String(value);
+              }}
             />
           )}
         </View>
-        <View style={[styles.card, {marginTop: 16}]}>
+        <View style={[styles.card, styles.marginTop16]}>
           <View style={styles.cardHeader}>
-            <View style={[styles.iconBox, {backgroundColor: '#E3F2FD'}]}>
+            <View style={[styles.iconBox, styles.targetIconBg]}>
               <Icon name="target" size={20} color="#1976D2" />
             </View>
             <Text style={styles.cardTitle}>Pencapaian Bulan Ini</Text>
@@ -1615,30 +1591,19 @@ const ManagementDashboardScreen = ({navigation}) => {
             <ActivityIndicator size="small" color="#1976D2" />
           ) : (
             <>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-end',
-                  marginBottom: 8,
-                }}>
+              <View style={styles.targetSummaryRow}>
                 <View>
-                  <Text style={{fontSize: 12, color: '#666'}}>Realisasi</Text>
+                  <Text style={styles.labelSmall}>Realisasi</Text>
                   {/* ANIMASI REALISASI */}
                   <CountUp
                     value={targetSummary.nominal}
                     formatter={formatRupiah}
-                    style={{
-                      fontSize: 18,
-                      fontWeight: 'bold',
-                      color: progressColor,
-                    }}
+                    style={[styles.targetValue, {color: progressColor}]}
                   />
                 </View>
-                <View style={{alignItems: 'flex-end'}}>
-                  <Text style={{fontSize: 12, color: '#666'}}>Target</Text>
-                  <Text
-                    style={{fontSize: 14, fontWeight: '600', color: '#333'}}>
+                <View style={styles.alignEnd}>
+                  <Text style={styles.labelSmall}>Target</Text>
+                  <Text style={styles.targetText}>
                     {formatRupiah(targetSummary.target)}
                   </Text>
                 </View>
@@ -1649,14 +1614,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                 height={10}
               />
 
-              <Text
-                style={{
-                  textAlign: 'right',
-                  fontSize: 12,
-                  color: progressColor,
-                  marginTop: 4,
-                  fontWeight: 'bold',
-                }}>
+              <Text style={[styles.progressText, {color: progressColor}]}>
                 {/* ANIMASI PERSENTASE (Opsional, atau text biasa gapapa) */}
                 {percentage.toFixed(1)}% {isOverTarget && '🎉'}
               </Text>
@@ -1674,13 +1632,11 @@ const ManagementDashboardScreen = ({navigation}) => {
     return (
       <View style={styles.sectionContainer}>
         <Text style={styles.sectionTitle}>Performa Cabang</Text>
-        <View style={[styles.card, {minHeight: 100, justifyContent: 'center'}]}>
+        <View style={[styles.card, styles.rankingCard]}>
           {loadingBranch ? (
             <ActivityIndicator size="small" color="#1976D2" />
           ) : branchPerformance.length === 0 ? (
-            <Text style={{textAlign: 'center', color: '#999'}}>
-              Belum ada data
-            </Text>
+            <Text style={styles.emptyCenterText}>Belum ada data</Text>
           ) : (
             branchPerformance.map((branch, index) => (
               <View key={branch.kode_cabang} style={styles.rankingItem}>
@@ -1694,12 +1650,9 @@ const ManagementDashboardScreen = ({navigation}) => {
                               index
                             ],
                           }
-                        : {backgroundColor: '#F5F5F5'},
+                        : styles.bgGray100,
                     ]}>
-                    <Text
-                      style={[styles.rankText, index > 2 && {color: '#666'}]}>
-                      {index + 1}
-                    </Text>
+                    <Text style={styles.textGray}>{index + 1}</Text>
                   </View>
                   <View>
                     <Text style={styles.branchName}>{branch.nama_cabang}</Text>
@@ -1731,7 +1684,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                     percentage={branch.ach || 0}
                     color={(branch.ach || 0) >= 100 ? '#4CAF50' : '#1976D2'}
                     height={4}
-                    style={{marginTop: 4, width: '100%'}}
+                    style={styles.fullWidthMarginTop4}
                   />
                 </View>
               </View>
@@ -1752,7 +1705,7 @@ const ManagementDashboardScreen = ({navigation}) => {
           {loadingTopProducts ? (
             <ActivityIndicator size="small" color="#1976D2" />
           ) : topProducts.length === 0 ? (
-            <Text style={{textAlign: 'center', color: '#999', padding: 10}}>
+            <Text style={styles.emptyTextPadding}>
               Belum ada penjualan bulan ini.
             </Text>
           ) : (
@@ -1769,22 +1722,22 @@ const ManagementDashboardScreen = ({navigation}) => {
                     style={[
                       styles.rankBadgeMini,
                       index === 0
-                        ? {backgroundColor: '#FFD700'}
+                        ? styles.bgGold
                         : index === 1
-                        ? {backgroundColor: '#C0C0C0'}
+                        ? styles.bgSilver
                         : index === 2
-                        ? {backgroundColor: '#CD7F32'}
-                        : {backgroundColor: '#F5F5F5'},
+                        ? styles.bgBronze
+                        : styles.bgGray100,
                     ]}>
                     <Text
                       style={[
                         styles.rankTextMini,
-                        index > 2 && {color: '#888'},
+                        index > 2 && styles.textGray888,
                       ]}>
                       {index + 1}
                     </Text>
                   </View>
-                  <View style={{flex: 1, marginHorizontal: 12}}>
+                  <View style={styles.flex1Horizontal12}>
                     <Text style={styles.productName} numberOfLines={1}>
                       {item.NAMA}
                     </Text>
@@ -1795,16 +1748,12 @@ const ManagementDashboardScreen = ({navigation}) => {
                       <View style={[styles.barFill, {width: `${barWidth}%`}]} />
                     </View>
                   </View>
-                  <View style={{alignItems: 'flex-end'}}>
+                  <View style={styles.alignEnd}>
                     <Text style={styles.totalQty}>{item.TOTAL} Pcs</Text>
 
                     {/* 3. Tampilkan Badge 'Info' HANYA jika filter = ALL */}
                     {!isFiltered && (
-                      <View
-                        style={[
-                          styles.checkStockBadge,
-                          {backgroundColor: '#2E7D32'},
-                        ]}>
+                      <View style={[styles.checkStockBadge, styles.bgSuccess]}>
                         <Icon name="bar-chart-2" size={10} color="#fff" />
                         <Text style={styles.checkStockText}>Info</Text>
                       </View>
@@ -1822,7 +1771,7 @@ const ManagementDashboardScreen = ({navigation}) => {
   // Helper render baris progress (FIXED KEY WARNING)
   const renderTrendBar = (items, colorBase) => {
     if (!items || items.length === 0) {
-      return <Text style={{fontSize: 12, color: '#999'}}>Tidak ada data.</Text>;
+      return <Text style={styles.textGray999Small}>Tidak ada data.</Text>;
     }
 
     const topTotal = items.reduce(
@@ -1847,62 +1796,53 @@ const ManagementDashboardScreen = ({navigation}) => {
 
         // Gunakan kombinasi nama + index untuk key yang unik
         return (
-          <View key={`${item.kategori}-${index}`} style={{marginBottom: 12}}>
+          <View key={`${item.kategori}-${index}`} style={styles.marginBottom12}>
             {/* ... (Isi View sama seperti sebelumnya) ... */}
-            <View
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                marginBottom: 4,
-              }}>
-              <View
-                style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
+            <View style={styles.rowSpaceBetweenMb4}>
+              <View style={styles.rowCenterFlex1}>
                 <View
-                  style={{
-                    width: 16,
-                    height: 16,
-                    borderRadius: 8,
-                    backgroundColor: isTop1 ? colorBase : '#eee',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    marginRight: 6,
-                  }}>
+                  style={[
+                    styles.trendRankCircle,
+                    {
+                      backgroundColor: isTop1 ? colorBase : '#eee',
+                    },
+                  ]}>
                   <Text
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 'bold',
-                      color: isTop1 ? '#fff' : '#666',
-                    }}>
+                    style={[
+                      styles.trendRankNumber,
+                      {
+                        color: isTop1 ? '#fff' : '#666',
+                      },
+                    ]}>
                     {index + 1}
                   </Text>
                 </View>
                 <Text
-                  style={{
-                    fontSize: 12,
-                    fontWeight: isTop1 ? 'bold' : '600',
-                    color: textColor,
-                  }}
+                  style={[
+                    styles.trendLabel,
+                    {fontWeight: isTop1 ? 'bold' : '600', color: textColor},
+                  ]}
                   numberOfLines={1}>
                   {item.kategori || 'LAINNYA'}
                 </Text>
               </View>
               <Text
-                style={{
-                  fontSize: 12,
-                  fontWeight: isTop1 ? 'bold' : '500',
-                  color: textColor,
-                }}>
+                style={[
+                  styles.trendValue,
+                  {
+                    fontWeight: isTop1 ? 'bold' : '500',
+                    color: textColor,
+                  },
+                ]}>
                 {Math.round(percent)}%{' '}
-                <Text style={{fontSize: 10, fontWeight: 'normal'}}>
-                  ({qty})
-                </Text>
+                <Text style={styles.fontNormal10}>({qty})</Text>
               </Text>
             </View>
             <AnimatedBar
               percentage={percent}
               color={barColor}
               height={6}
-              style={{width: '100%'}}
+              style={styles.fullWidth}
             />
           </View>
         );
@@ -1914,19 +1854,10 @@ const ManagementDashboardScreen = ({navigation}) => {
       <View style={styles.sectionContainer}>
         <Text style={styles.sectionTitle}>📊 Analisa Atribut</Text>
 
-        <View style={{flexDirection: 'row', gap: 10}}>
+        <View style={styles.trendCardsRow}>
           {/* KARTU KIRI: JENIS KAIN */}
-          <View style={[styles.card, {flex: 1, padding: 15}]}>
-            <View
-              style={[
-                styles.iconBox,
-                {
-                  backgroundColor: '#E0F2F1',
-                  width: 32,
-                  height: 32,
-                  marginBottom: 10,
-                },
-              ]}>
+          <View style={[styles.card, styles.trendCard]}>
+            <View style={[styles.iconBox, styles.trendIconKain]}>
               <Icon name="layers" size={16} color="#00695C" />
             </View>
             <Text style={styles.trendCardTitle}>Jenis Kain</Text>
@@ -1938,17 +1869,8 @@ const ManagementDashboardScreen = ({navigation}) => {
           </View>
 
           {/* KARTU KANAN: JENIS LENGAN */}
-          <View style={[styles.card, {flex: 1, padding: 15}]}>
-            <View
-              style={[
-                styles.iconBox,
-                {
-                  backgroundColor: '#FFF3E0',
-                  width: 32,
-                  height: 32,
-                  marginBottom: 10,
-                },
-              ]}>
+          <View style={[styles.card, styles.trendCard]}>
+            <View style={[styles.iconBox, styles.trendIconLengan]}>
               <Icon name="scissors" size={16} color="#EF6C00" />
             </View>
             <Text style={styles.trendCardTitle}>Tipe Lengan</Text>
@@ -1983,13 +1905,7 @@ const ManagementDashboardScreen = ({navigation}) => {
     return (
       <View style={styles.sectionContainer}>
         {/* Header Section */}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            marginBottom: 12,
-            marginLeft: 4,
-          }}>
+        <View style={[styles.iconBox, styles.trendIconLengan]}>
           <Icon
             name="alert-triangle"
             size={18}
@@ -2001,17 +1917,17 @@ const ManagementDashboardScreen = ({navigation}) => {
           </Text>
         </View>
 
-        <View style={[styles.card, {padding: 0}]}>
+        <View style={[styles.card, styles.noPadding]}>
           {loadingNegativeStock ? (
             <ActivityIndicator
               size="small"
               color="#D32F2F"
-              style={{margin: 20}}
+              style={styles.margin20}
             />
           ) : data.length === 0 ? (
-            <View style={{padding: 20, alignItems: 'center'}}>
+            <View style={styles.emptyState}>
               <Icon name="check-circle" size={40} color="#4CAF50" />
-              <Text style={{textAlign: 'center', color: '#666', marginTop: 8}}>
+              <Text style={styles.emptyStateText}>
                 Aman! Tidak ada stok minus.
               </Text>
             </View>
@@ -2026,38 +1942,20 @@ const ManagementDashboardScreen = ({navigation}) => {
                   key={`${item.kode}-${item.ukuran}-${index}`}
                   style={styles.negativeItem}>
                   {/* Kiri: Info Barang */}
-                  <View style={{flex: 1, marginRight: 10}}>
+                  <View style={styles.flex1Mr10}>
                     <Text style={styles.productName} numberOfLines={2}>
                       {item.nama}
                     </Text>
 
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        marginTop: 4,
-                      }}>
+                    <View style={styles.rowCenterMt4}>
                       <Text style={styles.productSize}>
                         {item.ukuran} • {item.kode}
                       </Text>
 
                       {/* Render Conditional yang Aman */}
                       {showBranchBadge ? (
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            marginLeft: 8,
-                            backgroundColor: '#EEEEEE',
-                            paddingHorizontal: 6,
-                            borderRadius: 4,
-                          }}>
-                          <Text
-                            style={{
-                              fontSize: 10,
-                              color: '#616161',
-                              fontWeight: 'bold',
-                            }}>
+                        <View style={styles.branchBadge}>
+                          <Text style={styles.branchBadgeText}>
                             {item.cabang_nama || item.cabang_kode}
                           </Text>
                         </View>
@@ -2077,7 +1975,7 @@ const ManagementDashboardScreen = ({navigation}) => {
           {/* Footer Card - Gunakan pengecekan length > 0 */}
           {data.length > 0 && (
             <View style={styles.cardFooter}>
-              <Text style={{fontSize: 10, color: '#999'}}>
+              <Text style={styles.footerNote}>
                 Segera lakukan penyesuaian stok (SO)
               </Text>
             </View>
@@ -2089,7 +1987,7 @@ const ManagementDashboardScreen = ({navigation}) => {
 
   return (
     <View
-      style={{flex: 1, backgroundColor: '#F5F7FA'}}
+      style={styles.screenContainer}
       {...(showSidebar ? panResponder.panHandlers : {})}>
       <StatusBar
         translucent
@@ -2097,15 +1995,15 @@ const ManagementDashboardScreen = ({navigation}) => {
         barStyle="light-content"
       />
       <ScrollView
-        contentContainerStyle={{paddingBottom: 80}}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }>
         {renderHeader()}
-        <View style={{marginTop: -30, paddingHorizontal: 16, zIndex: 10}}>
+        <View style={styles.dashboardContent}>
           {/* DROPDOWN FILTER (Hanya KDC) */}
           {userInfo.cabang === 'KDC' && (
-            <View style={{alignItems: 'flex-end', marginBottom: 10}}>
+            <View style={styles.filterContainer}>
               <TouchableOpacity
                 style={styles.branchDropdown}
                 onPress={() => {
@@ -2143,7 +2041,7 @@ const ManagementDashboardScreen = ({navigation}) => {
         {renderProductTrends()}
         {renderTopProducts()}
         {renderNegativeStock()}
-        <View style={{height: 20}} />
+        <View style={styles.spacer20} />
       </ScrollView>
 
       {/* --- SIDEBAR DRAWER --- */}
@@ -2257,7 +2155,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                   color="#D32F2F"
                   style={styles.marginRight10}
                 />
-                <Text style={[styles.drawerItemText, {color: '#D32F2F'}]}>
+                <Text style={[styles.drawerItemText, styles.dangerText]}>
                   Keluar
                 </Text>
               </TouchableOpacity>
@@ -2283,11 +2181,11 @@ const ManagementDashboardScreen = ({navigation}) => {
           animationType="slide"
           onRequestClose={() => setOtorisasiVisible(false)}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, {height: '80%'}]}>
+            <View style={[styles.modalContent, styles.height80]}>
               {/* Taller modal */}
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Daftar Persetujuan</Text>
-                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                <View style={styles.rowCenter}>
                   {/* Refresh Button */}
                   <TouchableOpacity
                     onPress={fetchPendingAuth}
@@ -2302,9 +2200,7 @@ const ManagementDashboardScreen = ({navigation}) => {
               {loadingAuth ? (
                 <View style={styles.loadingContainer}>
                   <ActivityIndicator size="large" color="#1976D2" />
-                  <Text style={{marginTop: 10, color: '#666'}}>
-                    Memuat data...
-                  </Text>
+                  <Text style={styles.textGrayMt10}>Memuat data...</Text>
                 </View>
               ) : (
                 <FlatList
@@ -2317,7 +2213,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                   maxToRenderPerBatch={5} // Batasi render per batch
                   removeClippedSubviews={true} // Hapus view yang tidak terlihat dari memori (Android)
                   updateCellsBatchingPeriod={50}
-                  contentContainerStyle={{padding: 16}}
+                  contentContainerStyle={styles.padding16}
                   ListEmptyComponent={
                     <View style={styles.emptyContainer}>
                       <Icon name="check-square" size={48} color="#ddd" />
@@ -2357,7 +2253,7 @@ const ManagementDashboardScreen = ({navigation}) => {
               <FlatList
                 data={piutangList}
                 keyExtractor={item => item.cabang_kode}
-                contentContainerStyle={{padding: 16}}
+                contentContainerStyle={styles.padding16}
                 renderItem={({item}) => (
                   <TouchableOpacity
                     style={styles.piutangItem}
@@ -2370,7 +2266,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                         {item.cabang_kode}
                       </Text>
                     </View>
-                    <View style={{alignItems: 'flex-end'}}>
+                    <View style={styles.alignEnd}>
                       <Text style={styles.piutangAmount}>
                         {formatRupiah(item.sisa_piutang)}
                       </Text>
@@ -2409,18 +2305,17 @@ const ManagementDashboardScreen = ({navigation}) => {
               <FlatList
                 data={detailInvoices}
                 keyExtractor={(item, index) => `${item.invoice}-${index}`}
-                contentContainerStyle={{padding: 16}}
+                contentContainerStyle={styles.padding16}
                 renderItem={({item}) => (
                   <View style={styles.invoiceItem}>
                     {/* Bagian Kiri: Info Customer & Invoice */}
-                    <View style={{flex: 1, marginRight: 10}}>
+                    <View style={styles.flex1Mr10}>
                       {/* TAMPILKAN NAMA CUSTOMER */}
                       <Text style={styles.customerName} numberOfLines={1}>
                         {item.nama_customer}
                       </Text>
 
-                      <View
-                        style={{flexDirection: 'row', alignItems: 'center'}}>
+                      <View style={styles.modalHeight}>
                         <Text style={styles.invoiceNo}>{item.invoice}</Text>
                         <Text style={styles.dotSeparator}>•</Text>
                         <Text style={styles.invoiceDate}>{item.tanggal}</Text>
@@ -2428,7 +2323,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                     </View>
 
                     {/* Bagian Kanan: Nominal */}
-                    <View style={{alignItems: 'flex-end'}}>
+                    <View style={styles.alignEnd}>
                       <Text style={styles.invoiceLabel}>Sisa:</Text>
                       <Text style={styles.invoiceAmount}>
                         {formatRupiah(item.sisa_piutang)}
@@ -2449,8 +2344,7 @@ const ManagementDashboardScreen = ({navigation}) => {
         animationType="fade"
         onRequestClose={() => setStockModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View
-            style={[styles.modalContent, {height: 'auto', maxHeight: '60%'}]}>
+          <View style={[styles.modalContent, styles.modalHeight]}>
             <View style={styles.modalHeader}>
               <View style={styles.flex1}>
                 {/* JUDUL DINAMIS */}
@@ -2459,7 +2353,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                     ? 'Rincian Penjualan Cabang'
                     : 'Sebaran Stok Real'}
                 </Text>
-                <Text style={{fontSize: 12, color: '#666', marginTop: 2}}>
+                <Text style={styles.subText}>
                   {selectedProductItem?.NAMA ||
                     selectedProductItem?.nama_barang}{' '}
                   ({selectedProductItem?.UKURAN || selectedProductItem?.ukuran})
@@ -2474,14 +2368,14 @@ const ManagementDashboardScreen = ({navigation}) => {
               <ActivityIndicator
                 size="large"
                 color={modalType === 'SALES' ? '#2E7D32' : '#1976D2'} // Warna Spinner Dinamis
-                style={{margin: 30}}
+                style={styles.margin30}
               />
             ) : (
-              <ScrollView contentContainerStyle={{padding: 20}}>
+              <ScrollView contentContainerStyle={styles.padding20}>
                 {stockSpreadList.length === 0 ? (
-                  <View style={{alignItems: 'center', padding: 20}}>
+                  <View style={styles.centerPadding20}>
                     <Icon name="info" size={40} color="#ccc" />
-                    <Text style={{color: '#888', marginTop: 10}}>
+                    <Text style={styles.emptyText}>
                       {modalType === 'SALES'
                         ? 'Belum ada data penjualan.'
                         : 'Stok kosong di semua cabang.'}
@@ -2490,8 +2384,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                 ) : (
                   stockSpreadList.map((stok, i) => (
                     <View key={i} style={styles.stockRow}>
-                      <View
-                        style={{flexDirection: 'row', alignItems: 'center'}}>
+                      <View style={styles.rowCenter}>
                         <Icon
                           name="map-pin"
                           size={14}
@@ -2505,22 +2398,21 @@ const ManagementDashboardScreen = ({navigation}) => {
 
                       {/* BADGE DINAMIS (HIJAU UNTUK SALES, BIRU UNTUK STOK) */}
                       <View
-                        style={{
-                          backgroundColor:
-                            modalType === 'SALES' ? '#E8F5E9' : '#E3F2FD',
-                          paddingHorizontal: 12,
-                          paddingVertical: 4,
-                          borderRadius: 6,
-                          minWidth: 60,
-                          alignItems: 'center',
-                        }}>
+                        style={[
+                          styles.stockBadge,
+                          {
+                            backgroundColor:
+                              modalType === 'SALES' ? '#E8F5E9' : '#E3F2FD',
+                          },
+                        ]}>
                         <Text
-                          style={{
-                            fontSize: 14,
-                            fontWeight: 'bold',
-                            color:
-                              modalType === 'SALES' ? '#2E7D32' : '#1565C0',
-                          }}>
+                          style={[
+                            styles.stockBadgeText,
+                            {
+                              color:
+                                modalType === 'SALES' ? '#2E7D32' : '#1565C0',
+                            },
+                          ]}>
                           {stok.qty} {modalType === 'SALES' ? '' : ''}
                         </Text>
                       </View>
@@ -2530,14 +2422,8 @@ const ManagementDashboardScreen = ({navigation}) => {
               </ScrollView>
             )}
 
-            <View
-              style={{
-                padding: 15,
-                borderTopWidth: 1,
-                borderColor: '#eee',
-                alignItems: 'center',
-              }}>
-              <Text style={{fontSize: 10, color: '#999'}}>
+            <View style={styles.stockFooter}>
+              <Text style={styles.footerNote}>
                 {modalType === 'SALES'
                   ? 'Total qty terjual bulan ini per cabang'
                   : 'Sisa stok fisik di masing-masing cabang'}
@@ -2567,7 +2453,7 @@ const ManagementDashboardScreen = ({navigation}) => {
         animationType="slide"
         onRequestClose={() => setVisitorModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, {height: '80%'}]}>
+          <View style={[styles.modalContent, styles.height80]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Detail Visitor Gagal Beli</Text>
               <TouchableOpacity onPress={() => setVisitorModalVisible(false)}>
@@ -2579,13 +2465,12 @@ const ManagementDashboardScreen = ({navigation}) => {
               <ActivityIndicator
                 size="large"
                 color="#1976D2"
-                style={{marginTop: 50}}
+                style={styles.marginTop50}
               />
             ) : visitorData.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Icon name="user-check" size={48} color="#4CAF50" />
-                <Text
-                  style={{color: '#666', marginTop: 10, textAlign: 'center'}}>
+                <Text style={styles.centerGrayText}>
                   Semua pengunjung sukses belanja hari ini.{'\n'}Belum ada Lost
                   Order!
                 </Text>
@@ -2594,25 +2479,22 @@ const ManagementDashboardScreen = ({navigation}) => {
               <FlatList
                 data={visitorData}
                 keyExtractor={item => item.lo_id.toString()}
-                contentContainerStyle={{padding: 16}}
+                contentContainerStyle={styles.padding16}
                 renderItem={({item}) => (
                   <View style={styles.invoiceItem}>
-                    <View style={{flex: 1, marginRight: 10}}>
+                    <View style={styles.flex1Mr10}>
                       <Text style={styles.customerName} numberOfLines={1}>
                         {item.lo_produk_nama} ({item.lo_ukuran})
                       </Text>
-                      <Text style={{fontSize: 12, color: '#666'}}>
+                      <Text style={styles.labelSmall}>
                         <Icon name="user-x" size={10} color="#D32F2F" />{' '}
                         {item.lo_customer_nama || 'Tanpa Nama'} - Cab:{' '}
                         {item.lo_cabang}
                       </Text>
                     </View>
-                    <View style={{alignItems: 'flex-end'}}>
+                    <View style={styles.alignEnd}>
                       <Text
-                        style={[
-                          styles.invoiceAmount,
-                          {color: '#D32F2F', fontSize: 12},
-                        ]}>
+                        style={[styles.invoiceAmount, styles.dangerTextSmall]}>
                         {item.lo_alasan}
                       </Text>
                       <Text style={styles.invoiceLabel}>
@@ -3675,6 +3557,305 @@ const styles = StyleSheet.create({
     padding: 0,
     paddingVertical: 10,
     minHeight: 220,
+  },
+
+  progressBarContainer: {
+    backgroundColor: '#E0E0E0',
+    overflow: 'hidden',
+  },
+
+  fullHeight: {
+    height: '100%',
+  },
+
+  textGray12: {
+    fontSize: 12,
+    color: '#555',
+  },
+
+  textSuccess: {
+    color: '#2E7D32',
+  },
+
+  bgBlue50: {
+    backgroundColor: '#E3F2FD',
+  },
+
+  bgGray100: {
+    backgroundColor: '#F5F5F5',
+  },
+
+  branchCodeText: {
+    fontWeight: 'bold',
+    color: '#1565C0',
+    fontSize: 12,
+  },
+
+  marginLeft15: {
+    marginLeft: 15,
+  },
+
+  alignSelfStart: {
+    alignSelf: 'flex-start',
+  },
+
+  bgOrange50: {
+    backgroundColor: '#FFF3E0',
+  },
+
+  bigValueOrange: {
+    color: '#E65100',
+    marginTop: 5,
+  },
+
+  chartCard: {
+    padding: 0,
+    paddingVertical: 10,
+    minHeight: 220,
+  },
+
+  loadingChart: {
+    marginTop: 80,
+  },
+
+  chartStyle: {
+    marginVertical: 8,
+    borderRadius: 16,
+  },
+
+  marginTop16: {
+    marginTop: 16,
+  },
+
+  targetIconBg: {
+    backgroundColor: '#E3F2FD',
+  },
+
+  targetSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: 8,
+  },
+
+  labelSmall: {
+    fontSize: 12,
+    color: '#666',
+  },
+
+  targetValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+
+  targetText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+
+  progressText: {
+    textAlign: 'right',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: 'bold',
+  },
+
+  rankingCard: {
+    minHeight: 100,
+    justifyContent: 'center',
+  },
+
+  emptyCenterText: {
+    textAlign: 'center',
+    color: '#999',
+  },
+
+  textGray: {
+    color: '#666',
+  },
+
+  fullWidthMarginTop4: {
+    marginTop: 4,
+    width: '100%',
+  },
+
+  emptyTextPadding: {
+    textAlign: 'center',
+    color: '#999',
+    padding: 10,
+  },
+
+  textGray888: {
+    color: '#888',
+  },
+
+  flex1Horizontal12: {
+    flex: 1,
+    marginHorizontal: 12,
+  },
+
+  bgSuccess: {
+    backgroundColor: '#2E7D32',
+  },
+
+  textGray999Small: {
+    fontSize: 12,
+    color: '#999',
+  },
+
+  marginBottom12: {
+    marginBottom: 12,
+  },
+
+  rowSpaceBetweenMb4: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+
+  rowCenterFlex1: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+
+  trendRankCircle: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 6,
+  },
+
+  trendRankNumber: {
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+
+  trendLabel: {
+    fontSize: 12,
+  },
+
+  trendValue: {
+    fontSize: 12,
+  },
+
+  fontNormal10: {
+    fontSize: 10,
+    fontWeight: 'normal',
+  },
+
+  fullWidth: {
+    width: '100%',
+  },
+
+  trendCardsRow: {flexDirection: 'row', gap: 10},
+  trendCard: {flex: 1, padding: 15},
+  trendIconKain: {
+    backgroundColor: '#E0F2F1',
+    width: 32,
+    height: 32,
+    marginBottom: 10,
+  },
+  trendIconLengan: {
+    backgroundColor: '#FFF3E0',
+    width: 32,
+    height: 32,
+    marginBottom: 10,
+  },
+  negativeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  cardNoPadding: {padding: 0},
+  margin20: {margin: 20},
+  emptyState: {padding: 20, alignItems: 'center'},
+  emptyStateText: {textAlign: 'center', color: '#666', marginTop: 8},
+  flex1Mr10: {flex: 1, marginRight: 10},
+  rowCenterMt4: {flexDirection: 'row', alignItems: 'center', marginTop: 4},
+  branchBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+    backgroundColor: '#EEEEEE',
+    paddingHorizontal: 6,
+    borderRadius: 4,
+  },
+  branchBadgeText: {fontSize: 10, color: '#616161', fontWeight: 'bold'},
+  footerNote: {fontSize: 10, color: '#999'},
+  screenContainer: {flex: 1, backgroundColor: '#F5F7FA'},
+  dashboardTop: {marginTop: -30, paddingHorizontal: 16, zIndex: 10},
+  filterWrapper: {alignItems: 'flex-end', marginBottom: 10},
+  spacer20: {height: 20},
+  dangerText: {color: '#D32F2F'},
+
+  height80: {
+    height: '80%',
+  },
+
+  textGrayMt10: {
+    marginTop: 10,
+    color: '#666',
+  },
+
+  padding16: {
+    padding: 16,
+  },
+
+  modalHeight: {
+    height: 'auto',
+    maxHeight: '60%',
+  },
+
+  subText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+
+  margin30: {
+    margin: 30,
+  },
+
+  centerPadding20: {
+    alignItems: 'center',
+    padding: 20,
+  },
+
+  stockFooter: {
+    padding: 15,
+    borderTopWidth: 1,
+    borderColor: '#eee',
+    alignItems: 'center',
+  },
+
+  marginTop50: {
+    marginTop: 50,
+  },
+
+  centerGrayText: {
+    color: '#666',
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  stockBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  stockBadgeText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  dangerTextSmall: {
+    color: '#D32F2F',
+    fontSize: 12,
   },
 });
 

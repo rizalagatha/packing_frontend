@@ -349,18 +349,21 @@ const LoginScreen = () => {
             'Koneksi ke server gagal.';
 
           // ==========================================
-          // PENANGANAN KHUSUS JIKA KUNCI HANGUS (SIDIK JARI DIUBAH)
+          // PENANGANAN JIKA KUNCI HANGUS ATAU DIHAPUS DARI DATABASE
           // ==========================================
-          if (msg.includes('permanently invalidated')) {
+          if (
+            msg.includes('permanently invalidated') ||
+            msg.includes('belum terdaftar')
+          ) {
             const rnBiometrics = new ReactNativeBiometrics();
-            // Hapus sisa kunci yang sudah rusak di HP
+            // Hapus sisa kunci lama di HP agar bisa daftar ulang
             await rnBiometrics.deleteKeys();
 
             Toast.show({
-              type: 'error',
-              text1: 'Sistem Keamanan Berubah',
+              type: 'info',
+              text1: 'Sinkronisasi Perangkat',
               text2:
-                'Pengaturan sidik jari/layar HP diubah. Silakan tekan MASUK sekali lagi untuk mendaftarkan ulang perangkat.',
+                'Sistem di-reset. Silakan tekan MASUK sekali lagi untuk mendaftar.',
             });
           } else {
             // Error umum (password salah, gps jauh, dll)

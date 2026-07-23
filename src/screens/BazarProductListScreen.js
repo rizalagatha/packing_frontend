@@ -63,7 +63,11 @@ const BazarProductListScreen = ({navigation}) => {
 
   const formatRupiah = val => {
     const number = Number(val);
-    if (isNaN(number) || val === null || val === undefined) return 'Rp 0';
+
+    if (isNaN(number) || val === null || val === undefined) {
+      return 'Rp 0';
+    }
+
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
       currency: 'IDR',
@@ -76,7 +80,7 @@ const BazarProductListScreen = ({navigation}) => {
     <TouchableOpacity style={styles.card} onPress={() => handleSelect(item)}>
       <View style={styles.cardHeader}>
         <Text style={styles.productCode}>{item.barcode}</Text>
-        <View style={{flexDirection: 'row'}}>
+        <View style={styles.badgeContainer}>
           {/* Label Tipe Produk (Reguler/Promo/dll) */}
           {item.tipe_produk ? (
             <View
@@ -107,10 +111,20 @@ const BazarProductListScreen = ({navigation}) => {
 
   const getTipeColor = tipe => {
     const t = tipe.toUpperCase();
-    if (t.includes('PROMO')) return '#FF9800'; // Oranye
-    if (t.includes('REJECT')) return '#F44336'; // Merah
-    if (t.includes('DISPLAY')) return '#9C27B0'; // Ungu
-    return '#1976D2'; // Biru untuk Reguler/Lainnya
+
+    if (t.includes('PROMO')) {
+      return '#FF9800';
+    }
+
+    if (t.includes('REJECT')) {
+      return '#F44336';
+    }
+
+    if (t.includes('DISPLAY')) {
+      return '#9C27B0';
+    }
+
+    return '#1976D2';
   };
 
   return (
@@ -156,7 +170,7 @@ const BazarProductListScreen = ({navigation}) => {
         </View>
 
         {/* ROW 2: TIPE PRODUK [BARU] */}
-        <View style={[styles.filterRow, {marginTop: 8}]}>
+        <View style={[styles.filterRow, styles.filterRowSpacing]}>
           <Text style={styles.filterLabel}>Tipe:</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {types.map(tip => (
@@ -304,6 +318,14 @@ const styles = StyleSheet.create({
   tabActiveType: {backgroundColor: '#455A64'}, // Biru Abu-abu untuk Tipe agar beda warna
   tabText: {fontSize: 11, color: '#666', fontWeight: 'bold'},
   tabTextActive: {color: '#fff'},
+
+  badgeContainer: {
+    flexDirection: 'row',
+  },
+
+  filterRowSpacing: {
+    marginTop: 8,
+  },
 });
 
 export default BazarProductListScreen;

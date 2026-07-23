@@ -11,11 +11,10 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   BackHandler,
-  LayoutAnimation, // 1. Import LayoutAnimation
-  UIManager, // 2. Import UIManager
-  Vibration, // 3. Import Vibration
+  LayoutAnimation,
+  UIManager,
+  Vibration,
 } from 'react-native';
 import {AuthContext} from '../context/AuthContext';
 import StrukModal from '../components/StrukModal';
@@ -24,10 +23,10 @@ import {
   scanProdukPenjualanApi,
   savePenjualanApi,
   searchRekeningApi,
-  getActivePromosApi, // -> Import Baru
   getPrintDataApi,
   sendStrukWaApi,
 } from '../api/ApiService';
+import {usePromoEngine} from '../hooks/usePromoEngine';
 import SearchModal from '../components/SearchModal';
 import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
@@ -48,7 +47,19 @@ const PenjualanLangsungScreen = ({navigation}) => {
   const [customer, setCustomer] = useState(null);
   const [items, setItems] = useState([]);
   const [scannedValue, setScannedValue] = useState('');
-  const [activePromos, setActivePromos] = useState([]); // -> Daftar Promo Aktif
+  const {
+    activePromos,
+    loadActivePromos,
+    buildItemDiscountMap,
+    applyItemDiscounts,
+    evaluateFakturPromos,
+  } = usePromoEngine();
+  const [itemDiscountMap, setItemDiscountMap] = useState(new Map());
+
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   // Payment State
   const [tunai, setTunai] = useState('');
@@ -84,7 +95,7 @@ const PenjualanLangsungScreen = ({navigation}) => {
       (sum, item) => sum + item.jumlah * (item.diskonRp || 0),
       0,
     );
-    const totalDiskonFaktur = diskonFaktur; // Ambil dari state
+    const totalDiskonFaktur = diskonFaktur;
 
     const totalPcs = items.reduce((sum, item) => sum + item.jumlah, 0);
 
@@ -101,7 +112,7 @@ const PenjualanLangsungScreen = ({navigation}) => {
     const bayar =
       (parseInt(tunai) || 0) +
       (parseInt(transfer) || 0) +
-      (parseInt(qris) || 0); // <--- TAMBAH QRIS DI SINI
+      (parseInt(qris) || 0);
     return Math.max(bayar - totals.grandTotal, 0);
   }, [tunai, transfer, qris, totals.grandTotal]);
 
@@ -135,14 +146,44 @@ const PenjualanLangsungScreen = ({navigation}) => {
 
         // Load Promos
         const today = new Date().toISOString().split('T')[0];
-        const promoRes = await getActivePromosApi({tanggal: today}, userToken);
-        setActivePromos(promoRes.data.data || []);
+        await loadActivePromos(today, userToken);
       } catch (error) {
         console.log('Init data failed', error);
       }
     };
     initData();
-  }, [userToken]);
+  }, [userToken, loadActivePromos]);
+
+  // Bangun peta diskon item dari promo DISCOUNT (mis. PRO-2026-006)
+  useEffect(() => {
+    const build = async () => {
+      if (!activePromos.length) return;
+      const map = await buildItemDiscountMap(
+        activePromos,
+        itemsRef.current,
+        userToken,
+        customer?.level_kode,
+      );
+      setItemDiscountMap(map);
+    };
+    build();
+  }, [
+    activePromos,
+    items.length,
+    userToken,
+    customer?.level_kode,
+    buildItemDiscountMap,
+  ]);
+
+  // Terapkan peta diskon ke item di keranjang
+  useEffect(() => {
+    if (itemDiscountMap.size === 0) return;
+    setItems(prev => {
+      const updated = applyItemDiscounts(prev, itemDiscountMap);
+      const changed = updated.some((it, i) => it.diskonRp !== prev[i].diskonRp);
+      return changed ? updated : prev;
+    });
+  }, [itemDiscountMap, applyItemDiscounts]);
 
   // --- 1. PREVENT BACK BUTTON (Agar keranjang tidak hilang tak sengaja) ---
   useEffect(() => {
@@ -302,7 +343,7 @@ const PenjualanLangsungScreen = ({navigation}) => {
       barcode: product.barcode,
       harga: finalPrice,
       jumlah: 1,
-      diskonRp: diskonPerPcs,
+      diskonRp: 0, // akan diisi otomatis oleh useEffect itemDiscountMap kalau eligible
       stok: product.stok,
       kategori: product.kategori || '',
     };
@@ -408,45 +449,18 @@ const PenjualanLangsungScreen = ({navigation}) => {
       });
     }
 
-    let potentialDiscount = 0;
-    let appliedPromoName = '';
+    const {namas, totalDiskon} = evaluateFakturPromos(
+      activePromos,
+      items,
+      customer?.level_kode,
+    );
 
-    // 1. Ambil Data Promo (Ganti ke PRO-2026-004)
-    const promoMei = activePromos.find(p => p.pro_nomor === 'PRO-2026-004');
-
-    // 2. Hitung Total Belanja Barang yang Berhak (Eligible)
-    const totalEligible = items.reduce((sum, item) => {
-      // Pastikan data tidak undefined
-      const kategori = (item.kategori || '').toUpperCase();
-      const namaBarang = (item.nama || '').toUpperCase();
-
-      // Aturan Pengecualian (Kecuali Bordir dan Custom Pengajuan)
-      const isBordir = kategori === 'SO-DTF' && namaBarang.includes('BR');
-      const isCustom = kategori.includes('PENGAJUAN');
-
-      // Jika bukan bordir dan bukan custom, maka barang ini berhak dapat promo
-      if (!isBordir && !isCustom) {
-        return sum + item.jumlah * item.harga;
-      }
-      return sum;
-    }, 0);
-
-    // 3. Logika Promo (Kelipatan 250rb disc 12.500)
-    // Jika tidak ada data promo aktif dari API, kita tetap bisa jalankan logika hardcode ini
-    // (Opsional: tambahkan `if (promoMei) { ... }` jika ingin strict harus ada di DB)
-    if (totalEligible >= 250000) {
-      const kelipatan = Math.floor(totalEligible / 250000);
-      potentialDiscount = 12500 * kelipatan;
-      appliedPromoName = 'PROMO MEI KELIPATAN 250K';
-    }
-
-    // --- KONFIRMASI KE USER ---
-    if (potentialDiscount > 0) {
+    if (totalDiskon > 0) {
       Alert.alert(
         '🎉 Promo Tersedia!',
-        `Anda berhak mendapatkan potongan Rp ${potentialDiscount.toLocaleString(
+        `Anda berhak mendapatkan potongan Rp ${totalDiskon.toLocaleString(
           'id-ID',
-        )} (${appliedPromoName}).\n\nGunakan promo ini?`,
+        )} (${namas.join(' + ')}).\n\nGunakan promo ini?`,
         [
           {
             text: 'Tidak',
@@ -460,15 +474,14 @@ const PenjualanLangsungScreen = ({navigation}) => {
           {
             text: 'Ya, Gunakan',
             onPress: () => {
-              setDiskonFaktur(potentialDiscount);
-              setPromoApplied(appliedPromoName);
+              setDiskonFaktur(totalDiskon);
+              setPromoApplied(namas.join(' + '));
               setShowPaymentModal(true);
             },
           },
         ],
       );
     } else {
-      // Tidak mencapai syarat promo (di bawah 250rb)
       setDiskonFaktur(0);
       setPromoApplied('');
       setShowPaymentModal(true);

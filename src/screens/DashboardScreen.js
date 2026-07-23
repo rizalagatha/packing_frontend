@@ -528,15 +528,15 @@ const DashboardScreen = ({navigation}) => {
     },
     {
       group: 'Toko',
-      title: 'Permintaan Otomatis',
-      desc: 'Cek stok habis',
-      iconName: 'trending-down',
-      iconColor: '#D32F2F',
-      bgColor: '#FFEBEE',
-      onPress: () => navigation.navigate('LowStock'),
+      title: 'Scan Ready SO',
+      desc: 'Mutasi pesanan otomatis',
+      iconName: 'maximize', // Icon mirip frame barcode/scanner
+      iconColor: '#00838F',
+      bgColor: '#E0F7FA',
+      onPress: () => navigation.navigate('SoBrowse'),
       allowed:
-        (['KDC', 'KBS'].includes(userInfo?.cabang) ||
-          (userInfo?.cabang?.startsWith('K') && userInfo?.cabang !== 'P04')) &&
+        userInfo?.cabang?.startsWith('K') &&
+        !['KDC', 'KBS'].includes(userInfo?.cabang) &&
         !isBazarUser,
     },
     {
@@ -547,19 +547,6 @@ const DashboardScreen = ({navigation}) => {
       iconColor: '#F57C00',
       bgColor: '#FFF3E0',
       onPress: () => navigation.navigate('PenjualanList'),
-      allowed:
-        userInfo?.cabang?.startsWith('K') &&
-        !['KDC', 'KBS'].includes(userInfo?.cabang) &&
-        !isBazarUser,
-    },
-    {
-      group: 'Toko',
-      title: 'Minta Barang',
-      desc: 'Request ke pusat',
-      iconName: 'shopping-bag',
-      iconColor: '#7B1FA2',
-      bgColor: '#F3E5F5',
-      onPress: () => navigation.navigate('MintaBarang'),
       allowed:
         userInfo?.cabang?.startsWith('K') &&
         !['KDC', 'KBS'].includes(userInfo?.cabang) &&
@@ -595,6 +582,33 @@ const DashboardScreen = ({navigation}) => {
         !['KDC', 'KBS'].includes(userInfo?.cabang) &&
         !isBazarUser,
     },
+    {
+      group: 'Toko',
+      title: 'Minta Barang',
+      desc: 'Request ke pusat',
+      iconName: 'shopping-bag',
+      iconColor: '#7B1FA2',
+      bgColor: '#F3E5F5',
+      onPress: () => navigation.navigate('MintaBarang'),
+      allowed:
+        userInfo?.cabang?.startsWith('K') &&
+        !['KDC', 'KBS'].includes(userInfo?.cabang) &&
+        !isBazarUser,
+    },
+    {
+      group: 'Toko',
+      title: 'Permintaan Otomatis',
+      desc: 'Cek stok habis',
+      iconName: 'trending-down',
+      iconColor: '#D32F2F',
+      bgColor: '#FFEBEE',
+      onPress: () => navigation.navigate('LowStock'),
+      allowed:
+        (['KDC', 'KBS'].includes(userInfo?.cabang) ||
+          (userInfo?.cabang?.startsWith('K') && userInfo?.cabang !== 'P04')) &&
+        !isBazarUser,
+    },
+
     // ADMIN
     {
       group: 'Admin',

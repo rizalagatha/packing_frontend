@@ -448,6 +448,12 @@ export const getActivePromosApi = (params, token) => {
   });
 };
 
+export const getPromoItemsApi = (nomor, token) => {
+  return apiClient.get(`/penjualan/promo-items/${nomor}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
 export const getPrintDataApi = (nomor, token) => {
   return apiClient.get(`/penjualan/print/${encodeURIComponent(nomor)}`, {
     headers: {Authorization: `Bearer ${token}`},
@@ -808,6 +814,26 @@ export const saveLostOrderApi = (data, token) => {
 export const getLostOrderHistoryApi = (params, token) => {
   return apiClient.get('/lost-order', {
     params,
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+// --- Scan Auto Mutasi SO (Mobile) ---
+export const getSoListMobileApi = (params, token) => {
+  return apiClient.get('/mobile/so', {
+    params, // { term, startDate, endDate }
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getSoDetailMobileApi = (nomorSo, token) => {
+  return apiClient.get(`/mobile/so/details/${encodeURIComponent(nomorSo)}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const scanAutoMutasiApi = (data, token) => {
+  return apiClient.post('/mobile/so/auto-mutasi-scan', data, {
     headers: {Authorization: `Bearer ${token}`},
   });
 };

@@ -46,6 +46,8 @@ import BazarCashierScreen from './src/screens/BazarCashierScreen';
 import BazarSalesHistoryScreen from './src/screens/BazarSalesHistoryScreen';
 import TerimaReturDcScreen from './src/screens/TerimaReturDcScreen';
 import LostOrderScreen from './src/screens/LostOrderScreen';
+import SoBrowseScreen from './src/screens/SoBrowseScreen';
+import SoScanScreen from './src/screens/SoScanScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -411,6 +413,16 @@ const App = () => {
               name="TerimaReturDc"
               component={TerimaReturDcScreen}
               options={{title: 'Terima Retur Store'}}
+            />
+            <Stack.Screen
+              name="SoBrowse"
+              component={SoBrowseScreen}
+              options={{title: 'Surat Pesanan (SO)'}}
+            />
+            <Stack.Screen
+              name="SoScan"
+              component={SoScanScreen}
+              options={{title: 'Scan Ready SO'}}
             />
           </>
         )}
