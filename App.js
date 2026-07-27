@@ -48,6 +48,9 @@ import TerimaReturDcScreen from './src/screens/TerimaReturDcScreen';
 import LostOrderScreen from './src/screens/LostOrderScreen';
 import SoBrowseScreen from './src/screens/SoBrowseScreen';
 import SoScanScreen from './src/screens/SoScanScreen';
+import MintaBahanBrowseScreen from './src/screens/MintaBahanBrowseScreen';
+import MintaBahanDetailScreen from './src/screens/MintaBahanDetailScreen';
+import MintaBahanFormScreen from './src/screens/MintaBahanFormScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -423,6 +426,21 @@ const App = () => {
               name="SoScan"
               component={SoScanScreen}
               options={{title: 'Scan Ready SO'}}
+            />
+            <Stack.Screen
+              name="MintaBahanBrowse"
+              component={MintaBahanBrowseScreen}
+              options={{title: 'Permintaan Bahan/Aksesoris'}}
+            />
+            <Stack.Screen
+              name="MintaBahanDetail"
+              component={MintaBahanDetailScreen}
+              options={{title: 'Detail Permintaan'}}
+            />
+            <Stack.Screen
+              name="MintaBahanForm"
+              component={MintaBahanFormScreen}
+              options={{title: 'Form Permintaan Bahan'}}
             />
           </>
         )}

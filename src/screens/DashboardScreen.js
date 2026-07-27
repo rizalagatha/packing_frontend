@@ -32,7 +32,9 @@ import LostOrderWidget from '../components/LostOrderWidget';
 import {
   getPendingAuthorizationApi,
   processAuthorizationApi,
+  checkMintaBahanUnapprovedApi, // <-- BARU
 } from '../api/ApiService';
+import {useFocusEffect} from '@react-navigation/native';
 
 const {width} = Dimensions.get('window');
 
@@ -253,6 +255,11 @@ const MenuItem = ({item}) => (
       <Text style={styles.menuTitle}>{item.title}</Text>
       <Text style={styles.menuDesc}>{item.desc || 'Akses fitur ini'}</Text>
     </View>
+    {item.badgeCount > 0 && (
+      <View style={styles.menuBadge}>
+        <Text style={styles.menuBadgeText}>{item.badgeCount}</Text>
+      </View>
+    )}
     <Icon name="chevron-right" size={20} color="#E0E0E0" />
   </BouncyButton>
 );
@@ -267,6 +274,8 @@ const DashboardScreen = ({navigation}) => {
   const [processingAuth, setProcessingAuth] = useState(null);
   const [expandedBranch, setExpandedBranch] = useState(null);
   const [isLostOrderVisible, setIsLostOrderVisible] = useState(false);
+
+  const [mintaBahanPendingCount, setMintaBahanPendingCount] = useState(0);
 
   const isMounted = useRef(true);
 
@@ -320,6 +329,26 @@ const DashboardScreen = ({navigation}) => {
       }
     }
   }, [userToken]);
+
+  const fetchMintaBahanPending = useCallback(async () => {
+    if (userInfo?.kode?.toUpperCase() !== 'ANTA') {
+      return;
+    }
+    try {
+      const res = await checkMintaBahanUnapprovedApi(userToken);
+      if (isMounted.current) {
+        setMintaBahanPendingCount(res.data.data?.count || 0);
+      }
+    } catch (error) {
+      console.log('Err MintaBahan Pending:', error);
+    }
+  }, [userToken, userInfo?.kode]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchMintaBahanPending();
+    }, [fetchMintaBahanPending]),
+  );
 
   // --- LOGIC GROUPING & PROCESS ---
   const groupedAuthList = useMemo(() => {
@@ -511,6 +540,17 @@ const DashboardScreen = ({navigation}) => {
       bgColor: '#E3F2FD',
       onPress: () => navigation.navigate('TerimaReturDc'),
       allowed: userInfo?.cabang === 'KDC', // Hanya muncul untuk user DC
+    },
+    {
+      group: 'Toko',
+      title: 'Permintaan Bahan/Aksesoris',
+      desc: 'Request bahan ke pabrik',
+      iconName: 'package',
+      iconColor: '#00796B',
+      bgColor: '#E0F2F1',
+      onPress: () => navigation.navigate('MintaBahanBrowse'),
+      allowed: userInfo?.kode?.toUpperCase() === 'ANTA',
+      badgeCount: mintaBahanPendingCount,
     },
     // TOKO
     {
@@ -1254,6 +1294,22 @@ const styles = StyleSheet.create({
 
   authListContent: {
     padding: 16,
+  },
+
+  menuBadge: {
+    backgroundColor: '#FF5252',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  menuBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
 });
 

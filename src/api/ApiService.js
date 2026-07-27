@@ -837,3 +837,51 @@ export const scanAutoMutasiApi = (data, token) => {
     headers: {Authorization: `Bearer ${token}`},
   });
 };
+
+// --- Minta Bahan (Kaosan) ---
+export const getMintaBahanListApi = (params, token) => {
+  return apiClient.get('/minta-bahan', {
+    params, // { startDate, endDate, keyword }
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getMintaBahanDetailsApi = (nomor, token) => {
+  return apiClient.get(`/minta-bahan/${encodeURIComponent(nomor)}/details`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const checkMintaBahanUnapprovedApi = token => {
+  return apiClient.get('/minta-bahan/check-unapproved', {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const approveMintaBahanRealisasiApi = (noRealisasi, token) => {
+  return apiClient.put(
+    `/minta-bahan/realisasi/${encodeURIComponent(noRealisasi)}/approve`,
+    {},
+    {headers: {Authorization: `Bearer ${token}`}},
+  );
+};
+
+// --- Minta Bahan Form (Kaosan) ---
+export const searchBarangKaosanApi = (keyword, jenis, token) => {
+  return apiClient.get('/minta-bahan-form/search-barang', {
+    params: {keyword, jenis},
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getMintaBahanFormForEditApi = (nomor, token) => {
+  return apiClient.get(`/minta-bahan-form/${encodeURIComponent(nomor)}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const saveMintaBahanFormApi = (payload, token) => {
+  return apiClient.post('/minta-bahan-form/save', payload, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};

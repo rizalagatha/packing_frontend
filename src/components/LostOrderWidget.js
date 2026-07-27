@@ -27,7 +27,7 @@ const ALASAN_LIST = [
   {id: 'Beli di Tempat Lain', icon: 'shopping-bag', color: '#42A5F5'},
   {id: 'Salah Toko', icon: 'map-pin', color: '#EC407A'},
   {id: 'Tunggu Terlalu Lama', icon: 'clock', color: '#FFA726'},
-  {id: 'Lainnya', icon: 'question', color: '#F57C00'},
+  {id: 'Lainnya', icon: 'help-circle', color: '#F57C00'},
 ];
 
 const LostOrderWidget = ({visible, onClose}) => {
