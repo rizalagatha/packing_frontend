@@ -866,6 +866,19 @@ export const approveMintaBahanRealisasiApi = (noRealisasi, token) => {
   );
 };
 
+export const deleteMintaBahanApi = (nomor, token) => {
+  return apiClient.delete(`/minta-bahan/${encodeURIComponent(nomor)}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
+export const getMintaBahanExportSummaryApi = (params, token) => {
+  return apiClient.get('/minta-bahan/export-summary', {
+    params, // { startDate, endDate }
+    headers: {Authorization: `Bearer ${token}`},
+  });
+};
+
 // --- Minta Bahan Form (Kaosan) ---
 export const searchBarangKaosanApi = (keyword, jenis, token) => {
   return apiClient.get('/minta-bahan-form/search-barang', {

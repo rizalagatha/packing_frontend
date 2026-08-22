@@ -80,8 +80,8 @@ android {
         applicationId "com.kaosan.packingapp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 57
-        versionName "1.6.40"
+        versionCode 60
+        versionName "1.6.43"
     }
     signingConfigs {
         debug {

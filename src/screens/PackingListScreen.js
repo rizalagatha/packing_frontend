@@ -682,11 +682,18 @@ const PackingListScreen = ({navigation, route}) => {
                   </Text>
                   <Text
                     style={[
+                      styles.itemNama,
+                      {fontSize: 11, color: '#999', marginTop: 2},
+                    ]}>
+                    Dibuat: {item.date_create || '-'}
+                  </Text>
+                  <Text
+                    style={[
                       {
                         fontSize: 12,
                         fontStyle: 'italic',
                         color: '#666',
-                        marginTop: 2,
+                        marginTop: 4,
                       },
                       isPriorityAuto && {color: '#BF360C', fontWeight: 'bold'},
                     ]}>

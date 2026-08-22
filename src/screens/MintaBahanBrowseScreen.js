@@ -9,9 +9,15 @@ import {
   ActivityIndicator,
   SafeAreaView,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import {AuthContext} from '../context/AuthContext';
-import {getMintaBahanListApi} from '../api/ApiService';
+import {
+  getMintaBahanListApi,
+  deleteMintaBahanApi,
+  getMintaBahanExportSummaryApi,
+} from '../api/ApiService';
+import {generateAndOpenMintaBahanPdf} from '../utils/mintaBahanPdfExport';
 import Icon from 'react-native-vector-icons/Feather';
 import DatePicker from 'react-native-date-picker';
 import Toast from 'react-native-toast-message';
@@ -54,6 +60,8 @@ const MintaBahanBrowseScreen = ({navigation}) => {
   const [openStartPicker, setOpenStartPicker] = useState(false);
   const [openEndPicker, setOpenEndPicker] = useState(false);
 
+  const [isExporting, setIsExporting] = useState(false);
+
   const fetchData = useCallback(
     async (isRefresh = false) => {
       if (!isRefresh) {
@@ -81,6 +89,48 @@ const MintaBahanBrowseScreen = ({navigation}) => {
     [startDate, endDate, keyword, userToken],
   );
 
+  const handleExportPdf = async () => {
+    setIsExporting(true);
+    try {
+      const params = {
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0],
+      };
+      const response = await getMintaBahanExportSummaryApi(params, userToken);
+      const data = response.data.data;
+
+      if (!data.summary.length) {
+        Toast.show({
+          type: 'info',
+          text1: 'Info',
+          text2: 'Tidak ada data pada periode yang dipilih.',
+        });
+        return;
+      }
+
+      const savedPath = await generateAndOpenMintaBahanPdf(
+        data,
+        params.startDate,
+        params.endDate,
+      );
+
+      Toast.show({
+        type: 'success',
+        text1: 'Berhasil',
+        text2: 'Laporan PDF tersimpan di folder Downloads.',
+      });
+      console.log('PDF tersimpan di:', savedPath);
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Gagal Export',
+        text2: error.message || 'Gagal membuat laporan PDF.',
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
   }, [startDate, endDate, fetchData]);
@@ -96,6 +146,43 @@ const MintaBahanBrowseScreen = ({navigation}) => {
     navigation.navigate('MintaBahanDetail', {nomor});
   };
 
+  const handleDelete = nomor => {
+    Alert.alert(
+      'Hapus Permintaan',
+      `Yakin hapus permintaan ${nomor}? Data tidak bisa dikembalikan.`,
+      [
+        {text: 'Batal', style: 'cancel'},
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: () => doDelete(nomor),
+        },
+      ],
+    );
+  };
+
+  const doDelete = async nomor => {
+    try {
+      await deleteMintaBahanApi(nomor, userToken);
+      Toast.show({
+        type: 'success',
+        text1: 'Berhasil',
+        text2: `${nomor} berhasil dihapus.`,
+      });
+      setList(prev => prev.filter(item => item.Nomor !== nomor));
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Gagal Hapus',
+        text2: error.response?.data?.message || 'Gagal menghapus data.',
+      });
+    }
+  };
+
+  const handleEdit = nomor => {
+    navigation.navigate('MintaBahanForm', {nomor});
+  };
+
   const renderItem = ({item}) => {
     const dateStr = new Date(item.Tanggal).toLocaleDateString('id-ID', {
       day: 'numeric',
@@ -106,69 +193,86 @@ const MintaBahanBrowseScreen = ({navigation}) => {
     const jenisStyle = jenisBadgeStyle(item.Jenis);
     const needsApproval = item.Approve === 'N';
     const fullyApproved = item.Approve === 'Y';
+    const canModify = item.Status === 'OPEN';
 
     return (
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() => handleOpenDetail(item.Nomor)}
-        activeOpacity={0.7}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.nomorText}>{item.Nomor}</Text>
-          <Text style={styles.dateText}>{dateStr}</Text>
-        </View>
-
-        <Text style={styles.namaSpk} numberOfLines={1}>
-          {item.NamaSpk || item.Keterangan || 'Tanpa Keterangan'}
-        </Text>
-
-        <View style={styles.badgeRow}>
-          <View style={[styles.badge, {backgroundColor: jenisStyle.bg}]}>
-            <Text style={[styles.badgeText, {color: jenisStyle.text}]}>
-              {item.Jenis}
-            </Text>
+      <View style={styles.card}>
+        <TouchableOpacity
+          onPress={() => handleOpenDetail(item.Nomor)}
+          activeOpacity={0.7}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.nomorText}>{item.Nomor}</Text>
+            <Text style={styles.dateText}>{dateStr}</Text>
           </View>
 
-          <View
-            style={[
-              styles.badge,
-              {
-                backgroundColor: statusStyle.bg,
-                borderWidth: 0.5,
-                borderColor: statusStyle.border,
-              },
-            ]}>
-            <Text style={[styles.badgeText, {color: statusStyle.text}]}>
-              {item.Status}
-            </Text>
-          </View>
-
-          {needsApproval && (
-            <View style={[styles.badge, styles.badgeNeedsApproval]}>
-              <Icon name="clock" size={10} color="#E65100" />
-              <Text
-                style={[styles.badgeText, {color: '#E65100', marginLeft: 3}]}>
-                Perlu Approve
-              </Text>
-            </View>
-          )}
-          {fullyApproved && (
-            <View style={[styles.badge, styles.badgeApproved]}>
-              <Icon name="check" size={10} color="#2E7D32" />
-              <Text
-                style={[styles.badgeText, {color: '#2E7D32', marginLeft: 3}]}>
-                Approved
-              </Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.footerRow}>
-          <Text style={styles.footerText}>
-            Peminta: {item.Usr} · {item.Bagian || '-'}
+          <Text style={styles.namaSpk} numberOfLines={1}>
+            {item.NamaSpk || item.Keterangan || 'Tanpa Keterangan'}
           </Text>
-          <Icon name="chevron-right" size={18} color="#BDBDBD" />
-        </View>
-      </TouchableOpacity>
+
+          <View style={styles.badgeRow}>
+            <View style={[styles.badge, {backgroundColor: jenisStyle.bg}]}>
+              <Text style={[styles.badgeText, {color: jenisStyle.text}]}>
+                {item.Jenis}
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.badge,
+                styles.statusBadgeBordered,
+                {
+                  backgroundColor: statusStyle.bg,
+                  borderColor: statusStyle.border,
+                },
+              ]}>
+              <Text style={[styles.badgeText, {color: statusStyle.text}]}>
+                {item.Status}
+              </Text>
+            </View>
+
+            {needsApproval && (
+              <View style={[styles.badge, styles.badgeNeedsApproval]}>
+                <Icon name="clock" size={10} color="#E65100" />
+                <Text style={[styles.badgeText, styles.needsApprovalText]}>
+                  Perlu Approve
+                </Text>
+              </View>
+            )}
+            {fullyApproved && (
+              <View style={[styles.badge, styles.badgeApproved]}>
+                <Icon name="check" size={10} color="#2E7D32" />
+                <Text style={[styles.badgeText, styles.approvedText]}>
+                  Approved
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.footerRow}>
+            <Text style={styles.footerText}>
+              Peminta: {item.Usr} · {item.Bagian || '-'}
+            </Text>
+            <Icon name="chevron-right" size={18} color="#BDBDBD" />
+          </View>
+        </TouchableOpacity>
+
+        {canModify && (
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={styles.btnActionEdit}
+              onPress={() => handleEdit(item.Nomor)}>
+              <Icon name="edit-2" size={14} color="#1976D2" />
+              <Text style={styles.btnActionEditText}>Edit</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.btnActionDelete}
+              onPress={() => handleDelete(item.Nomor)}>
+              <Icon name="trash-2" size={14} color="#D32F2F" />
+              <Text style={styles.btnActionDeleteText}>Hapus</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     );
   };
 
@@ -196,7 +300,12 @@ const MintaBahanBrowseScreen = ({navigation}) => {
         </View>
 
         <View style={styles.searchRow}>
-          <Icon name="search" size={20} color="#888" style={{marginLeft: 10}} />
+          <Icon
+            name="search"
+            size={20}
+            color="#888"
+            style={styles.searchIcon}
+          />
           <TextInput
             style={styles.searchInput}
             placeholder="Cari No. Permintaan / Keterangan..."
@@ -207,6 +316,20 @@ const MintaBahanBrowseScreen = ({navigation}) => {
           />
         </View>
       </View>
+
+      <TouchableOpacity
+        style={styles.btnExport}
+        onPress={handleExportPdf}
+        disabled={isExporting}>
+        {isExporting ? (
+          <ActivityIndicator size="small" color="#7B1FA2" />
+        ) : (
+          <>
+            <Icon name="file-text" size={16} color="#7B1FA2" />
+            <Text style={styles.btnExportText}>Export Laporan PDF</Text>
+          </>
+        )}
+      </TouchableOpacity>
 
       <DatePicker
         modal
@@ -235,14 +358,14 @@ const MintaBahanBrowseScreen = ({navigation}) => {
         <ActivityIndicator
           size="large"
           color="#7B1FA2"
-          style={{marginTop: 50}}
+          style={styles.loadingIndicator}
         />
       ) : (
         <FlatList
           data={list}
           renderItem={renderItem}
           keyExtractor={item => item.Nomor}
-          contentContainerStyle={{padding: 10, paddingBottom: 30}}
+          contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
           }
@@ -367,6 +490,72 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 4},
     shadowOpacity: 0.3,
     shadowRadius: 5,
+  },
+
+  actionRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderColor: '#F0F0F0',
+    marginTop: 10,
+    paddingTop: 10,
+    gap: 10,
+  },
+  btnActionEdit: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    paddingVertical: 8,
+    borderRadius: 6,
+    gap: 5,
+  },
+  btnActionEditText: {color: '#1976D2', fontSize: 12, fontWeight: 'bold'},
+  btnActionDelete: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFEBEE',
+    paddingVertical: 8,
+    borderRadius: 6,
+    gap: 5,
+  },
+  btnActionDeleteText: {color: '#D32F2F', fontSize: 12, fontWeight: 'bold'},
+
+  btnExport: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F3E5F5',
+    borderWidth: 1,
+    borderColor: '#CE93D8',
+    borderRadius: 6,
+    paddingVertical: 8,
+    marginTop: 8,
+    gap: 6,
+  },
+  btnExportText: {color: '#7B1FA2', fontWeight: 'bold', fontSize: 12},
+  statusBadgeBordered: {
+    borderWidth: 0.5,
+  },
+  needsApprovalText: {
+    color: '#E65100',
+    marginLeft: 3,
+  },
+  approvedText: {
+    color: '#2E7D32',
+    marginLeft: 3,
+  },
+  searchIcon: {
+    marginLeft: 10,
+  },
+  loadingIndicator: {
+    marginTop: 50,
+  },
+  listContent: {
+    padding: 10,
+    paddingBottom: 30,
   },
 });
 

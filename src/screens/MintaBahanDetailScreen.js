@@ -23,12 +23,13 @@ import {
   getMintaBahanDetailsApi,
   approveMintaBahanRealisasiApi,
 } from '../api/ApiService';
+import {deleteMintaBahanApi} from '../api/ApiService';
 import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
-const MintaBahanDetailScreen = ({route}) => {
+const MintaBahanDetailScreen = ({route, navigation}) => {
   const {nomor} = route.params;
   const {userToken} = useContext(AuthContext);
 
@@ -81,6 +82,47 @@ const MintaBahanDetailScreen = ({route}) => {
     setActiveTab(index === 0 ? 'items' : 'realisasi');
   };
 
+  const canModify = data?.items && data.realisasi.length === 0;
+  // (asumsi: kalau sudah ada realisasi, tidak bisa diedit lagi via form —
+  //  konsisten dengan validasi backend deletePermintaan yang menolak jika sudah ada realisasi)
+
+  const handleEdit = () => {
+    navigation.navigate('MintaBahanForm', {nomor});
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Hapus Permintaan',
+      `Yakin hapus permintaan ${nomor}? Data tidak bisa dikembalikan.`,
+      [
+        {text: 'Batal', style: 'cancel'},
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: doDelete,
+        },
+      ],
+    );
+  };
+
+  const doDelete = async () => {
+    try {
+      await deleteMintaBahanApi(nomor, userToken);
+      Toast.show({
+        type: 'success',
+        text1: 'Berhasil',
+        text2: `${nomor} berhasil dihapus.`,
+      });
+      navigation.goBack();
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Gagal Hapus',
+        text2: error.response?.data?.message || 'Gagal menghapus data.',
+      });
+    }
+  };
+
   const handleApprove = realisasi => {
     Alert.alert(
       'Konfirmasi Approve',
@@ -122,7 +164,7 @@ const MintaBahanDetailScreen = ({route}) => {
         <ActivityIndicator
           size="large"
           color="#7B1FA2"
-          style={{marginTop: 50}}
+          style={styles.loadingIndicator}
         />
       </SafeAreaView>
     );
@@ -245,7 +287,23 @@ const MintaBahanDetailScreen = ({route}) => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.headerInfo}>
-        <Text style={styles.headerNomor}>{nomor}</Text>
+        <View style={styles.headerInfoRow}>
+          <Text style={styles.headerNomor}>{nomor}</Text>
+          {canModify && (
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={styles.headerBtnEdit}
+                onPress={handleEdit}>
+                <Icon name="edit-2" size={14} color="#1976D2" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.headerBtnDelete}
+                onPress={handleDelete}>
+                <Icon name="trash-2" size={14} color="#D32F2F" />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* TAB SWITCH */}
@@ -288,14 +346,14 @@ const MintaBahanDetailScreen = ({route}) => {
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={handleScrollEnd}
-        style={{flex: 1}}>
+        style={styles.pagerScroll}>
         {/* HALAMAN 1: BARANG DIMINTA */}
-        <View style={{width: SCREEN_WIDTH}}>
+        <View style={styles.pagerPage}>
           <FlatList
             data={data.items}
             renderItem={renderItemBarang}
             keyExtractor={(item, idx) => `${item.Kode}-${idx}`}
-            contentContainerStyle={{padding: 10, paddingBottom: 30}}
+            contentContainerStyle={styles.listContent}
             refreshControl={
               <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
             }
@@ -306,12 +364,12 @@ const MintaBahanDetailScreen = ({route}) => {
         </View>
 
         {/* HALAMAN 2: REALISASI */}
-        <View style={{width: SCREEN_WIDTH}}>
+        <View style={styles.pagerPage}>
           <FlatList
             data={data.realisasi}
             renderItem={renderRealisasi}
             keyExtractor={item => item.NoRealisasi}
-            contentContainerStyle={{padding: 10, paddingBottom: 30}}
+            contentContainerStyle={styles.listContent}
             refreshControl={
               <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
             }
@@ -488,6 +546,37 @@ const styles = StyleSheet.create({
   btnApproveText: {color: '#fff', fontWeight: 'bold', fontSize: 13},
 
   emptyText: {textAlign: 'center', marginTop: 50, color: '#999', fontSize: 12},
+
+  headerInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerActions: {flexDirection: 'row', gap: 8},
+  headerBtnEdit: {
+    backgroundColor: '#E3F2FD',
+    padding: 8,
+    borderRadius: 6,
+  },
+  headerBtnDelete: {
+    backgroundColor: '#FFEBEE',
+    padding: 8,
+    borderRadius: 6,
+  },
+
+  loadingIndicator: {
+    marginTop: 50,
+  },
+  pagerScroll: {
+    flex: 1,
+  },
+  pagerPage: {
+    width: SCREEN_WIDTH,
+  },
+  listContent: {
+    padding: 10,
+    paddingBottom: 30,
+  },
 });
 
 export default MintaBahanDetailScreen;
