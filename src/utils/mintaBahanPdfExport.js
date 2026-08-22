@@ -12,22 +12,58 @@ const formatTanggalIndo = dateStr => {
   });
 };
 
+const jenisLabel = jenis => (jenis === 'OBAT' ? 'Obat / DTF' : 'Accesories');
+const jenisColor = jenis => (jenis === 'OBAT' ? '#7B1FA2' : '#00796B');
+const jenisBg = jenis => (jenis === 'OBAT' ? '#F3E5F5' : '#E0F2F1');
+
 const buildHtml = (data, startDate, endDate) => {
   const {summary, grandTotal} = data;
 
   const tokoRows = summary
     .map((toko, idx) => {
-      const itemRows = toko.items
-        .map(
-          item => `
-        <tr>
-          <td class="td-kode">${item.kode}</td>
-          <td>${item.nama}</td>
-          <td class="td-center">${item.satuan || '-'}</td>
-          <td class="td-right">${item.jumlah.toLocaleString('id-ID')}</td>
-        </tr>
-      `,
-        )
+      const jenisBlocks = toko.jenisList
+        .map(jenisEntry => {
+          const itemRows = jenisEntry.items
+            .map(
+              item => `
+            <tr>
+              <td class="td-kode">${item.kode}</td>
+              <td>${item.nama}</td>
+              <td class="td-center">${item.satuan || '-'}</td>
+              <td class="td-right">${item.jumlah.toLocaleString('id-ID')}</td>
+            </tr>
+          `,
+            )
+            .join('');
+
+          return `
+            <div class="jenis-block">
+              <div class="jenis-header" style="background:${jenisBg(
+                jenisEntry.jenis,
+              )}; color:${jenisColor(jenisEntry.jenis)};">
+                <span>${jenisLabel(jenisEntry.jenis)}</span>
+                <span class="jenis-stat">${
+                  jenisEntry.totalPermintaan
+                } permintaan · Total ${jenisEntry.totalJumlah.toLocaleString(
+            'id-ID',
+          )}</span>
+              </div>
+              <table class="item-table">
+                <thead>
+                  <tr>
+                    <th>Kode</th>
+                    <th>Nama Barang</th>
+                    <th class="td-center">Satuan</th>
+                    <th class="td-right">Jumlah</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${itemRows}
+                </tbody>
+              </table>
+            </div>
+          `;
+        })
         .join('');
 
       return `
@@ -35,21 +71,11 @@ const buildHtml = (data, startDate, endDate) => {
           <div class="toko-header">
             <span class="toko-rank">#${idx + 1}</span>
             <span class="toko-name">${toko.toko}</span>
-            <span class="toko-stat">${toko.totalPermintaan} permintaan</span>
+            <span class="toko-stat">Total ${toko.totalJumlah.toLocaleString(
+              'id-ID',
+            )}</span>
           </div>
-          <table class="item-table">
-            <thead>
-              <tr>
-                <th>Kode</th>
-                <th>Nama Barang</th>
-                <th class="td-center">Satuan</th>
-                <th class="td-right">Jumlah</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemRows}
-            </tbody>
-          </table>
+          ${jenisBlocks}
         </div>
       `;
     })
@@ -68,11 +94,14 @@ const buildHtml = (data, startDate, endDate) => {
           .header-sub { font-size: 11px; color: #777; margin-top: 2px; }
           .periode-box { background: #F3E5F5; padding: 8px 12px; border-radius: 6px; margin: 14px 0; font-size: 11px; color: #4A148C; }
           .grand-total-box { background: #7B1FA2; color: #fff; padding: 10px 14px; border-radius: 6px; margin-bottom: 18px; font-size: 13px; font-weight: bold; }
-          .toko-block { margin-bottom: 16px; page-break-inside: avoid; }
-          .toko-header { display: flex; align-items: center; background: #EDE7F6; padding: 8px 10px; border-radius: 4px 4px 0 0; }
+          .toko-block { margin-bottom: 20px; page-break-inside: avoid; }
+          .toko-header { display: flex; align-items: center; justify-content: space-between; background: #EDE7F6; padding: 8px 10px; border-radius: 4px; margin-bottom: 8px; }
           .toko-rank { background: #7B1FA2; color: #fff; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 3px; margin-right: 8px; }
           .toko-name { font-weight: bold; font-size: 13px; flex: 1; }
-          .toko-stat { font-size: 10px; color: #666; }
+          .toko-stat { font-size: 10px; color: #666; font-weight: bold; }
+          .jenis-block { margin-bottom: 10px; margin-left: 8px; }
+          .jenis-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-radius: 4px 4px 0 0; font-size: 11px; font-weight: bold; }
+          .jenis-stat { font-size: 9px; font-weight: normal; }
           table.item-table { width: 100%; border-collapse: collapse; }
           table.item-table th { background: #FAFAFA; border: 1px solid #E0E0E0; padding: 5px 8px; font-size: 10px; text-align: left; }
           table.item-table td { border: 1px solid #E0E0E0; padding: 5px 8px; font-size: 10px; }
