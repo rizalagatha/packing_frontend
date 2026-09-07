@@ -101,6 +101,41 @@ export const loginWithDeviceApi = (
     longitude: longitude,
   });
 };
+
+export const enrollDeviceNoBioApi = (
+  userKode,
+  password,
+  deviceId,
+  deviceSecret,
+  deviceName,
+) => {
+  return apiClient.post('/auth/enroll-device-nobio', {
+    user_kode: userKode,
+    user_password: password,
+    device_id: deviceId,
+    device_secret: deviceSecret,
+    device_name: deviceName,
+  });
+};
+
+export const loginWithDeviceNoBioApi = (
+  userKode,
+  password,
+  deviceId,
+  deviceSecret,
+  latitude,
+  longitude,
+) => {
+  return apiClient.post('/auth/login-device-nobio', {
+    user_kode: userKode,
+    user_password: password,
+    device_id: deviceId,
+    device_secret: deviceSecret,
+    latitude,
+    longitude,
+  });
+};
+
 // --- Packing ---
 export const getPackingHistoryApi = (params, token) => {
   return apiClient.get('/packing/history', {
@@ -775,6 +810,14 @@ export const uploadKoreksiBazarApi = (data, token) => {
   return apiClient.post('/bazar/upload-koreksi', data, {
     headers: {Authorization: `Bearer ${token}`},
   });
+};
+
+export const createBazarCustomerApi = (nama, hp, cabang, token) => {
+  return apiClient.post(
+    '/bazar/create-customer',
+    {nama, hp, cabang},
+    {headers: {Authorization: `Bearer ${token}`}},
+  );
 };
 
 // --- Terima Retur DC ---

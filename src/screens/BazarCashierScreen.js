@@ -16,6 +16,7 @@ import {
   SafeAreaView,
   Vibration,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import * as DB from '../services/Database';
 import {getHargaEcerAsli} from '../services/Database';
@@ -26,9 +27,15 @@ import StrukModal from '../components/StrukModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SoundPlayer from 'react-native-sound-player';
 import DeviceInfo from 'react-native-device-info';
+import {useResponsive} from '../hooks/useResponsive';
+import PaymentPanel from '../components/PaymentPanel';
+import {createBazarCustomerApi} from '../api/ApiService';
+import Toast from 'react-native-toast-message';
 
 const BazarCashierScreen = ({navigation, route}) => {
-  const {userInfo} = useContext(AuthContext);
+  const {isTablet} = useResponsive();
+  const [paymentResetKey, setPaymentResetKey] = useState(0);
+  const {userInfo, userToken} = useContext(AuthContext);
   const [cart, setCart] = useState([]);
   const [scanInput, setScanInput] = useState('');
 
@@ -40,6 +47,10 @@ const BazarCashierScreen = ({navigation, route}) => {
   const [isStrukVisible, setIsStrukVisible] = useState(false);
   const [lastTransactionData, setLastTransactionData] = useState(null);
   const [operator, setOperator] = useState('');
+  const [isAddCustomerVisible, setIsAddCustomerVisible] = useState(false);
+  const [newCustomerNama, setNewCustomerNama] = useState('');
+  const [newCustomerHp, setNewCustomerHp] = useState('');
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
 
   const scanInputRef = useRef(null);
 
@@ -232,6 +243,38 @@ const BazarCashierScreen = ({navigation, route}) => {
     setTimeout(() => scanInputRef.current?.focus(), 100);
   };
 
+  const handleSubmitNewCustomer = async () => {
+    if (!newCustomerNama.trim()) {
+      return Alert.alert('Perhatian', 'Nama pelanggan wajib diisi.');
+    }
+    setIsSavingCustomer(true);
+    try {
+      const response = await createBazarCustomerApi(
+        newCustomerNama.trim(),
+        newCustomerHp.trim(),
+        userInfo.cabang,
+        userToken,
+      );
+      const newCustomer = response.data.data;
+      setCustomer({kode: newCustomer.cus_kode, nama: newCustomer.cus_nama});
+      setNewCustomerNama('');
+      setNewCustomerHp('');
+      setIsAddCustomerVisible(false);
+      Toast.show({
+        type: 'success',
+        text1: 'Berhasil',
+        text2: 'Pelanggan baru tersimpan dan langsung dipilih.',
+      });
+    } catch (error) {
+      Alert.alert(
+        'Gagal',
+        error.response?.data?.message || 'Gagal menyimpan pelanggan.',
+      );
+    } finally {
+      setIsSavingCustomer(false);
+    }
+  };
+
   const updateItemQty = useCallback(
     (barcode, delta) => {
       setCart(prev => {
@@ -296,7 +339,6 @@ const BazarCashierScreen = ({navigation, route}) => {
 
   const resetCashier = () => {
     setCart([]);
-    // Balikkan ke default cabang, jangan ke UMUM
     const defaultKode = `${userInfo?.cabang || ''}00000`;
     let defaultNama = `BAZAR ${
       userInfo?.nama_cabang || userInfo?.cabang || ''
@@ -309,6 +351,7 @@ const BazarCashierScreen = ({navigation, route}) => {
     setIsPaymentVisible(false);
     setIsStrukVisible(false);
     setLastTransactionData(null);
+    setPaymentResetKey(prev => prev + 1); // <-- BARU
   };
 
   const handleFinishPayment = async paymentData => {
@@ -437,22 +480,72 @@ const BazarCashierScreen = ({navigation, route}) => {
     );
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      {/* CUSTOMER BAR - LEBIH CLEAN */}
-      <TouchableOpacity
-        style={styles.customerBar}
-        onPress={() => navigation.navigate('BazarCustomerList')}>
-        <View style={styles.iconCircle}>
-          <Icon name="user" size={16} color="#E91E63" />
+  const leftPaneContent = (
+    <>
+      <View style={styles.customerBarRow}>
+        <TouchableOpacity
+          style={styles.customerBar}
+          onPress={() => navigation.navigate('BazarCustomerList')}>
+          <View style={styles.iconCircle}>
+            <Icon name="user" size={16} color="#E91E63" />
+          </View>
+          <View style={styles.customerInfoWrapper}>
+            <Text style={styles.customerLabel}>PELANGGAN</Text>
+            <Text style={styles.customerText} numberOfLines={1}>
+              {customer.nama}
+            </Text>
+            <Text style={styles.customerSubText} numberOfLines={1}>
+              {customer.kode}
+            </Text>
+          </View>
+          <Icon name="chevron-right" size={20} color="#C2185B" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.btnAddCustomer}
+          onPress={() => setIsAddCustomerVisible(prev => !prev)}>
+          <Icon
+            name={isAddCustomerVisible ? 'x' : 'user-plus'}
+            size={18}
+            color="#fff"
+          />
+        </TouchableOpacity>
+      </View>
+
+      {isAddCustomerVisible && (
+        <View style={styles.newCustomerInline}>
+          <Text style={styles.miniLabel}>NAMA PELANGGAN BARU</Text>
+          <TextInput
+            style={styles.inputNewCustomer}
+            placeholder="Masukkan nama..."
+            value={newCustomerNama}
+            onChangeText={setNewCustomerNama}
+          />
+          <Text style={styles.miniLabel}>NO. HP (opsional)</Text>
+          <View style={styles.newCustomerRow}>
+            <TextInput
+              style={[styles.inputNewCustomer, styles.flex1]}
+              placeholder="08xxxxxxxxxx"
+              value={newCustomerHp}
+              onChangeText={setNewCustomerHp}
+              keyboardType="phone-pad"
+            />
+            <TouchableOpacity
+              style={[
+                styles.btnSaveNewCustomer,
+                isSavingCustomer && styles.btnDisabled,
+              ]}
+              onPress={handleSubmitNewCustomer}
+              disabled={isSavingCustomer}>
+              {isSavingCustomer ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Icon name="check" size={20} color="#fff" />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-        <View style={styles.customerInfoWrapper}>
-          <Text style={styles.customerLabel}>PELANGGAN</Text>
-          <Text style={styles.customerText}>{customer.nama}</Text>
-          <Text style={styles.customerSubText}>{customer.kode}</Text>
-        </View>
-        <Icon name="chevron-right" size={20} color="#C2185B" />
-      </TouchableOpacity>
+      )}
 
       <View style={styles.inputArea}>
         <View style={styles.rowInputs}>
@@ -500,36 +593,70 @@ const BazarCashierScreen = ({navigation, route}) => {
           </View>
         }
       />
+    </>
+  );
 
-      <View style={styles.footer}>
-        <View style={styles.flex1}>
-          {totalHemat > 0 && (
-            <View style={styles.hematBadge}>
-              <Text style={styles.hematText}>
-                TOTAL HEMAT: -Rp {totalHemat.toLocaleString()}
+  return (
+    <SafeAreaView style={styles.container}>
+      {isTablet ? (
+        // ================= LAYOUT TABLET =================
+        <View style={styles.tabletRow}>
+          <View style={styles.tabletLeftPane}>{leftPaneContent}</View>
+
+          <View style={styles.tabletRightPane}>
+            {cart.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Icon name="credit-card" size={64} color="#DDD" />
+                <Text style={styles.emptyText}>
+                  Scan barang dulu untuk mulai pembayaran
+                </Text>
+              </View>
+            ) : (
+              <PaymentPanel
+                total={grandTotal}
+                onFinish={handleFinishPayment}
+                resetTrigger={paymentResetKey}
+              />
+            )}
+          </View>
+        </View>
+      ) : (
+        // ================= LAYOUT HP =================
+        <>
+          {leftPaneContent}
+
+          <View style={styles.footer}>
+            <View style={styles.flex1}>
+              {totalHemat > 0 && (
+                <View style={styles.hematBadge}>
+                  <Text style={styles.hematText}>
+                    TOTAL HEMAT: -Rp {totalHemat.toLocaleString()}
+                  </Text>
+                </View>
+              )}
+              <Text style={styles.totalLabel}>GRAND TOTAL</Text>
+              <Text style={styles.totalValue}>
+                Rp {grandTotal.toLocaleString()}
               </Text>
             </View>
-          )}
-          <Text style={styles.totalLabel}>GRAND TOTAL</Text>
-          <Text style={styles.totalValue}>
-            Rp {grandTotal.toLocaleString()}
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={[styles.btnPay, cart.length === 0 && styles.btnDisabled]}
-          onPress={() => cart.length > 0 && setIsPaymentVisible(true)}
-          disabled={cart.length === 0}>
-          <Text style={styles.btnPayText}>BAYAR</Text>
-          <Icon name="arrow-right" size={20} color="#fff" />
-        </TouchableOpacity>
-      </View>
+            <TouchableOpacity
+              style={[styles.btnPay, cart.length === 0 && styles.btnDisabled]}
+              onPress={() => cart.length > 0 && setIsPaymentVisible(true)}
+              disabled={cart.length === 0}>
+              <Text style={styles.btnPayText}>BAYAR</Text>
+              <Icon name="arrow-right" size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
 
-      <PaymentModal
-        visible={isPaymentVisible}
-        total={totalBelanja}
-        onClose={() => setIsPaymentVisible(false)}
-        onFinish={handleFinishPayment}
-      />
+          <PaymentModal
+            visible={isPaymentVisible}
+            total={totalBelanja}
+            onClose={() => setIsPaymentVisible(false)}
+            onFinish={handleFinishPayment}
+          />
+        </>
+      )}
+
       <StrukModal
         visible={isStrukVisible}
         data={lastTransactionData}
@@ -544,13 +671,28 @@ const BazarCashierScreen = ({navigation, route}) => {
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: '#F4F7F9'},
   customerBar: {
+    flex: 1,
     flexDirection: 'row',
     backgroundColor: '#fff',
-    padding: 15,
+    padding: 12, // turun dari 15
     alignItems: 'center',
-    margin: 10,
     borderRadius: 12,
     elevation: 2,
+    height: 64, // BARU — kunci tinggi tetap
+  },
+  customerBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 10,
+    gap: 8,
+  },
+  btnAddCustomer: {
+    backgroundColor: '#E91E63',
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   iconCircle: {
     width: 36,
@@ -828,6 +970,52 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 20,
+  },
+  tabletRow: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  tabletLeftPane: {
+    flex: 7, // <-- sebelumnya 3, sekarang 70% untuk kiri (customer/operator/scan/cart)
+    borderRightWidth: 1,
+    borderRightColor: '#E0E0E0',
+  },
+  tabletRightPane: {
+    flex: 3, // <-- sebelumnya 7, sekarang 30% untuk PaymentPanel
+    backgroundColor: '#fff',
+  },
+  newCustomerInline: {
+    backgroundColor: '#fff',
+    marginHorizontal: 10,
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    elevation: 1,
+    borderWidth: 1,
+    borderColor: '#FCE4EC',
+  },
+  inputNewCustomer: {
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 8,
+    height: 42,
+    paddingHorizontal: 10,
+    fontSize: 13,
+    color: '#333',
+    marginBottom: 8,
+  },
+  newCustomerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  btnSaveNewCustomer: {
+    backgroundColor: '#4CAF50',
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

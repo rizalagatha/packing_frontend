@@ -31,6 +31,7 @@ import {AuthContext} from '../context/AuthContext';
 import DeviceInfo from 'react-native-device-info';
 import EmptyStockModal from '../components/EmptyStockModal';
 import {useRoute} from '@react-navigation/native';
+import {useResponsive} from '../hooks/useResponsive';
 
 import {
   getDashboardTodayStatsApi,
@@ -53,7 +54,7 @@ import {
 } from '../api/ApiService';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const DRAWER_WIDTH = SCREEN_WIDTH * 0.75; // Lebar Menu 75% layar
+const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.75, 320); // Cap di 320 supaya tidak kebesaran di tablet
 
 // Helper Format Rupiah (Updated: Tanpa Desimal)
 const formatRupiah = angka => {
@@ -315,7 +316,9 @@ const BranchSelectorModal = ({
   branches,
   selected,
   onSelect,
+  isTablet,
 }) => {
+  const tabletStyle = isTablet ? styles.bottomSheetTablet : null;
   return (
     <Modal
       visible={visible}
@@ -327,7 +330,7 @@ const BranchSelectorModal = ({
         style={styles.modalOverlay}
         activeOpacity={1}
         onPress={onClose}>
-        <View style={styles.bottomSheetContent}>
+        <View style={[styles.bottomSheetContent, tabletStyle]}>
           <View style={styles.bottomSheetHeader}>
             <View style={styles.bottomSheetHandle} />
             <Text style={styles.bottomSheetTitle}>Pilih Cabang</Text>
@@ -432,6 +435,7 @@ const BranchSelectorModal = ({
 
 const ManagementDashboardScreen = ({navigation}) => {
   const route = useRoute();
+  const {width: winWidth, isTablet} = useResponsive();
   const {userInfo, userToken, logout} = useContext(AuthContext);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -1399,6 +1403,16 @@ const ManagementDashboardScreen = ({navigation}) => {
 
   // --- RENDER COMPONENTS ---
 
+  const chartWidth = isTablet ? Math.min(winWidth, 900) - 48 : winWidth - 48;
+
+  const scrollContentWrapperStyle = isTablet
+    ? styles.contentWrapperTablet
+    : null;
+
+  const modalContentTabletStyle = isTablet ? styles.modalContentTablet : null;
+
+  const bottomSheetTabletStyle = isTablet ? styles.bottomSheetTablet : null;
+
   const renderHeader = () => (
     <LinearGradient colors={['#1565C0', '#42A5F5']} style={styles.headerCard}>
       <View style={styles.headerTop}>
@@ -1554,7 +1568,7 @@ const ManagementDashboardScreen = ({navigation}) => {
                 labels: salesChart.labels,
                 datasets: [{data: salesChart.data}],
               }}
-              width={SCREEN_WIDTH - 48}
+              width={chartWidth}
               height={200}
               yAxisLabel=""
               yAxisSuffix=""
@@ -2000,48 +2014,50 @@ const ManagementDashboardScreen = ({navigation}) => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }>
         {renderHeader()}
-        <View style={styles.dashboardContent}>
-          {/* DROPDOWN FILTER (Hanya KDC) */}
-          {userInfo.cabang === 'KDC' && (
-            <View style={styles.filterContainer}>
-              <TouchableOpacity
-                style={styles.branchDropdown}
-                onPress={() => {
-                  // Tambahkan log untuk debug
-                  console.log('Tombol Filter Diklik');
-                  setBranchSelectorVisible(true);
-                }}
-                activeOpacity={0.8} // Tambahkan feedback visual
-              >
-                <Icon
-                  name="map-pin"
-                  size={14}
-                  color="#1565C0"
-                  style={styles.marginRight6}
-                />
-                <Text style={styles.branchDropdownText}>
-                  {dashboardBranchFilter === 'ALL'
-                    ? 'Semua Cabang'
-                    : dashboardBranchFilter}
-                </Text>
-                <Icon
-                  name="chevron-down"
-                  size={16}
-                  color="#1565C0"
-                  style={styles.marginLeft4}
-                />
-              </TouchableOpacity>
-            </View>
-          )}
+        <View style={scrollContentWrapperStyle}>
+          <View style={styles.dashboardContent}>
+            {/* DROPDOWN FILTER (Hanya KDC) */}
+            {userInfo.cabang === 'KDC' && (
+              <View style={styles.filterContainer}>
+                <TouchableOpacity
+                  style={styles.branchDropdown}
+                  onPress={() => {
+                    // Tambahkan log untuk debug
+                    console.log('Tombol Filter Diklik');
+                    setBranchSelectorVisible(true);
+                  }}
+                  activeOpacity={0.8} // Tambahkan feedback visual
+                >
+                  <Icon
+                    name="map-pin"
+                    size={14}
+                    color="#1565C0"
+                    style={styles.marginRight6}
+                  />
+                  <Text style={styles.branchDropdownText}>
+                    {dashboardBranchFilter === 'ALL'
+                      ? 'Semua Cabang'
+                      : dashboardBranchFilter}
+                  </Text>
+                  <Icon
+                    name="chevron-down"
+                    size={16}
+                    color="#1565C0"
+                    style={styles.marginLeft4}
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
 
-          {renderPiutangSection()}
+            {renderPiutangSection()}
+          </View>
+          {renderChartAndTarget()}
+          {dashboardBranchFilter === 'ALL' && renderBranchRanking()}
+          {renderProductTrends()}
+          {renderTopProducts()}
+          {renderNegativeStock()}
+          <View style={styles.spacer20} />
         </View>
-        {renderChartAndTarget()}
-        {dashboardBranchFilter === 'ALL' && renderBranchRanking()}
-        {renderProductTrends()}
-        {renderTopProducts()}
-        {renderNegativeStock()}
-        <View style={styles.spacer20} />
       </ScrollView>
 
       {/* --- SIDEBAR DRAWER --- */}
@@ -2171,6 +2187,7 @@ const ManagementDashboardScreen = ({navigation}) => {
         branches={branchList}
         selected={dashboardBranchFilter}
         onSelect={handleFilterChange}
+        isTablet={isTablet}
       />
 
       {/* --- MODAL OTORISASI (Hanya dirender jika punya akses, untuk keamanan extra) --- */}
@@ -2181,7 +2198,12 @@ const ManagementDashboardScreen = ({navigation}) => {
           animationType="slide"
           onRequestClose={() => setOtorisasiVisible(false)}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, styles.height80]}>
+            <View
+              style={[
+                styles.modalContent,
+                styles.height80,
+                modalContentTabletStyle,
+              ]}>
               {/* Taller modal */}
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Daftar Persetujuan</Text>
@@ -3856,6 +3878,24 @@ const styles = StyleSheet.create({
   dangerTextSmall: {
     color: '#D32F2F',
     fontSize: 12,
+  },
+
+  contentWrapperTablet: {
+    maxWidth: 900,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  modalContentTablet: {
+    maxWidth: 600,
+    alignSelf: 'center',
+    width: '100%',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  bottomSheetTablet: {
+    maxWidth: 500,
+    alignSelf: 'center',
+    width: '100%',
   },
 });
 

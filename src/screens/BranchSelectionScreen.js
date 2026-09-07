@@ -17,6 +17,7 @@ import {AuthContext} from '../context/AuthContext';
 import Icon from 'react-native-vector-icons/Feather';
 import Geolocation from 'react-native-geolocation-service';
 import Toast from 'react-native-toast-message';
+import {useResponsive} from '../hooks/useResponsive';
 
 // --- 1. BOUNCY BUTTON (FIXED useEffect Dependencies) ---
 const BouncyButton = ({onPress, children, style, delay = 0, disabled}) => {
@@ -82,13 +83,24 @@ const BouncyButton = ({onPress, children, style, delay = 0, disabled}) => {
 };
 
 // --- 2. BRANCH CARD ---
-const BranchCard = ({item, onPress, index, isLoading, isOtherLoading}) => {
+const BranchCard = ({
+  item,
+  onPress,
+  index,
+  isLoading,
+  isOtherLoading,
+  isGrid,
+}) => {
   const iconColors = ['#1E88E5', '#43A047', '#FB8C00', '#8E24AA'];
   const color = iconColors[index % iconColors.length];
 
   return (
     <BouncyButton
-      style={[styles.cardContainer, isOtherLoading && styles.cardDisabled]}
+      style={[
+        styles.cardContainer,
+        isGrid && styles.cardContainerGrid,
+        isOtherLoading && styles.cardDisabled,
+      ]}
       onPress={onPress}
       delay={index * 100}
       disabled={isLoading || isOtherLoading}>
@@ -113,7 +125,7 @@ const BranchCard = ({item, onPress, index, isLoading, isOtherLoading}) => {
 };
 
 const BranchSelectionScreen = () => {
-  // Pastikan 'logout' diambil dari sini
+  const {isTablet, columns} = useResponsive();
   const {branches, finalizeLogin, logout} = useContext(AuthContext);
 
   const [loadingBranchCode, setLoadingBranchCode] = useState(null);
@@ -209,7 +221,13 @@ const BranchSelectionScreen = () => {
       <FlatList
         data={branches}
         keyExtractor={item => item.kode}
-        contentContainerStyle={styles.listContainer}
+        key={isTablet ? `grid-${columns}` : 'list'}
+        numColumns={isTablet ? columns : 1}
+        columnWrapperStyle={isTablet ? styles.columnWrapper : undefined}
+        contentContainerStyle={[
+          styles.listContainer,
+          isTablet && styles.listContainerTablet,
+        ]}
         showsVerticalScrollIndicator={false}
         renderItem={({item, index}) => {
           const isThisLoading = loadingBranchCode === item.kode;
@@ -222,13 +240,14 @@ const BranchSelectionScreen = () => {
               isLoading={isThisLoading}
               isOtherLoading={isAnyLoading && !isThisLoading}
               onPress={() => handleSelectBranch(item.kode)}
+              isGrid={isTablet}
             />
           );
         }}
         ListFooterComponent={
           <View style={styles.footerContainer}>
             <TouchableOpacity
-              onPress={handleLogout} // Panggil fungsi wrapper
+              onPress={handleLogout}
               style={styles.logoutBtn}
               disabled={loadingBranchCode !== null}>
               <Icon
@@ -358,6 +377,19 @@ const styles = StyleSheet.create({
 
   logoutIcon: {
     marginRight: 8,
+  },
+
+  listContainerTablet: {
+    maxWidth: 900,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  columnWrapper: {
+    gap: 12,
+  },
+  cardContainerGrid: {
+    flex: 1,
+    marginBottom: 12,
   },
 });
 

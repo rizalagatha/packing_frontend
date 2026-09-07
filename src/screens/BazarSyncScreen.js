@@ -15,8 +15,10 @@ import * as DB from '../services/Database';
 import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {useResponsive} from '../hooks/useResponsive';
 
 const BazarSyncScreen = () => {
+  const {isTablet} = useResponsive();
   const {userToken, userInfo} = useContext(AuthContext);
 
   const [isSyncing, setIsSyncing] = useState(false);
@@ -150,128 +152,162 @@ const BazarSyncScreen = () => {
     );
   };
 
+  const leftPaneContent = (
+    <>
+      <View style={styles.headerCard}>
+        <Icon name="refresh-cw" size={40} color="#E91E63" />
+        <Text style={styles.headerTitle}>Manajemen Data Bazar</Text>
+        <Text style={styles.headerSub}>
+          Cabang: {userInfo?.nama_cabang || userInfo?.cabang}
+        </Text>
+      </View>
+
+      {isSyncing &&
+        (syncStage === 'downloading' || syncStage.includes('saving')) && (
+          <View style={styles.progressContainer}>
+            <Text style={styles.stageText}>
+              {syncStage === 'downloading' && '☁️ Mengunduh data master...'}
+              {syncStage === 'saving_prod' &&
+                `📦 Menyimpan Produk (${progress}%)`}
+              {syncStage === 'saving_cust' && '👥 Menyimpan data Customer...'}
+              {syncStage === 'saving_rek' &&
+                '💳 Menyimpan data Rekening/EDC...'}
+            </Text>
+            <View style={styles.progressBarBg}>
+              <View style={[styles.progressBarFill, {width: `${progress}%`}]} />
+            </View>
+          </View>
+        )}
+
+      <View style={styles.actionContainer}>
+        <TouchableOpacity
+          style={[
+            styles.btnAction,
+            styles.btnUpload,
+            isSyncing && styles.btnDisabled,
+          ]}
+          onPress={handleUploadOnly}
+          disabled={isSyncing}>
+          {isSyncing && syncStage === 'uploading' ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Icon
+                name="upload-cloud"
+                size={20}
+                color="#fff"
+                style={styles.buttonIcon}
+              />
+              <View>
+                <Text style={styles.btnText}>UPLOAD PENJUALAN</Text>
+                <Text style={styles.btnSubText}>
+                  Kirim {itemCount.pending} nota ke pusat
+                </Text>
+              </View>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.btnAction,
+            styles.btnDownload,
+            isSyncing && styles.btnDisabled,
+          ]}
+          onPress={handleDownloadOnly}
+          disabled={isSyncing}>
+          {isSyncing &&
+          (syncStage === 'downloading' || syncStage.includes('saving')) ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Icon
+                name="download-cloud"
+                size={20}
+                color="#fff"
+                style={styles.buttonIcon}
+              />
+              <View>
+                <Text style={styles.btnText}>DOWNLOAD MASTER</Text>
+                <Text style={styles.btnSubText}>
+                  Update Produk, Customer, & EDC
+                </Text>
+              </View>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.infoFooter}>
+        *Gunakan Download Master jika ada perubahan harga, barang baru, atau
+        perubahan mesin EDC dari kantor pusat.
+      </Text>
+    </>
+  );
+
+  const rightPaneContent = (
+    <View style={styles.card}>
+      <Text style={styles.rightPaneTitle}>Info Data Tersimpan di Device</Text>
+
+      <View style={styles.row}>
+        <Text style={styles.label}>Update Terakhir</Text>
+        <Text style={styles.value}>{lastSync}</Text>
+      </View>
+      <View style={styles.divider} />
+
+      <View style={styles.row}>
+        <Text style={styles.label}>Nota Pending (Belum Upload)</Text>
+        <Text
+          style={[styles.value, itemCount.pending > 0 && styles.pendingValue]}>
+          {itemCount.pending} Nota
+        </Text>
+      </View>
+      <View style={styles.divider} />
+
+      <View style={styles.row}>
+        <Text style={styles.label}>Master Produk</Text>
+        <Text style={styles.value}>{itemCount.prod || 0} Item</Text>
+      </View>
+      <View style={styles.divider} />
+
+      <View style={styles.row}>
+        <Text style={styles.label}>Master Customer</Text>
+        <Text style={styles.value}>{itemCount.cust || 0} Pelanggan</Text>
+      </View>
+      <View style={styles.divider} />
+
+      <View style={styles.row}>
+        <Text style={styles.label}>Master Rekening/EDC</Text>
+        <Text style={styles.value}>{itemCount.rek || 0} Akun</Text>
+      </View>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.headerCard}>
-          <Icon name="refresh-cw" size={40} color="#E91E63" />
-          <Text style={styles.headerTitle}>Manajemen Data Bazar</Text>
-          <Text style={styles.headerSub}>
-            Cabang: {userInfo?.nama_cabang || userInfo?.cabang}
-          </Text>
+      {isTablet ? (
+        <View style={styles.tabletRow}>
+          <ScrollView
+            style={styles.tabletLeftPane}
+            contentContainerStyle={styles.tabletLeftScroll}
+            showsVerticalScrollIndicator={false}>
+            {leftPaneContent}
+          </ScrollView>
+
+          <ScrollView
+            style={styles.tabletRightPane}
+            contentContainerStyle={styles.tabletRightScroll}
+            showsVerticalScrollIndicator={false}>
+            {rightPaneContent}
+          </ScrollView>
         </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {leftPaneContent}
 
-        {/* STATS AREA */}
-        <View style={styles.card}>
-          <View style={styles.row}>
-            <Text style={styles.label}>Update Terakhir</Text>
-            <Text style={styles.value}>{lastSync}</Text>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.row}>
-            <Text style={styles.label}>Nota Pending (Lokal)</Text>
-            <Text
-              style={[
-                styles.value,
-                itemCount.pending > 0 && styles.pendingValue,
-              ]}>
-              {itemCount.pending} Nota
-            </Text>
-          </View>
-
-          {/* TAMBAHAN STATS REKENING */}
-          <View style={[styles.row, styles.rowMarginTop]}>
-            <Text style={styles.label}>Master Rekening/EDC</Text>
-            <Text style={styles.value}>{itemCount.rek || 0} Akun</Text>
-          </View>
-        </View>
-
-        {/* PROGRESS BAR */}
-        {isSyncing &&
-          (syncStage === 'downloading' || syncStage.includes('saving')) && (
-            <View style={styles.progressContainer}>
-              <Text style={styles.stageText}>
-                {syncStage === 'downloading' && '☁️ Mengunduh data master...'}
-                {syncStage === 'saving_prod' &&
-                  `📦 Menyimpan Produk (${progress}%)`}
-                {syncStage === 'saving_cust' && '👥 Menyimpan data Customer...'}
-                {syncStage === 'saving_rek' &&
-                  '💳 Menyimpan data Rekening/EDC...'}
-              </Text>
-              <View style={styles.progressBarBg}>
-                <View
-                  style={[styles.progressBarFill, {width: `${progress}%`}]}
-                />
-              </View>
-            </View>
-          )}
-
-        <View style={styles.actionContainer}>
-          {/* TOMBOL UPLOAD */}
-          <TouchableOpacity
-            style={[
-              styles.btnAction,
-              styles.btnUpload,
-              isSyncing && styles.btnDisabled,
-            ]}
-            onPress={handleUploadOnly}
-            disabled={isSyncing}>
-            {isSyncing && syncStage === 'uploading' ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Icon
-                  name="upload-cloud"
-                  size={20}
-                  color="#fff"
-                  style={styles.buttonIcon}
-                />
-                <View>
-                  <Text style={styles.btnText}>UPLOAD PENJUALAN</Text>
-                  <Text style={styles.btnSubText}>
-                    Kirim {itemCount.pending} nota ke pusat
-                  </Text>
-                </View>
-              </>
-            )}
-          </TouchableOpacity>
-
-          {/* TOMBOL DOWNLOAD */}
-          <TouchableOpacity
-            style={[
-              styles.btnAction,
-              styles.btnDownload,
-              isSyncing && styles.btnDisabled,
-            ]}
-            onPress={handleDownloadOnly}
-            disabled={isSyncing}>
-            {isSyncing &&
-            (syncStage === 'downloading' || syncStage.includes('saving')) ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Icon
-                  name="download-cloud"
-                  size={20}
-                  color="#fff"
-                  style={styles.buttonIcon}
-                />
-                <View>
-                  <Text style={styles.btnText}>DOWNLOAD MASTER</Text>
-                  <Text style={styles.btnSubText}>
-                    Update Produk, Customer, & EDC
-                  </Text>
-                </View>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.infoFooter}>
-          *Gunakan Download Master jika ada perubahan harga, barang baru, atau
-          perubahan mesin EDC dari kantor pusat.
-        </Text>
-      </ScrollView>
+          <View style={styles.cardMarginTop}>{rightPaneContent}</View>
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 };
@@ -344,6 +380,34 @@ const styles = StyleSheet.create({
 
   buttonIcon: {
     marginRight: 10,
+  },
+  tabletRow: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  tabletLeftPane: {
+    flex: 3,
+    borderRightWidth: 1,
+    borderRightColor: '#E0E0E0',
+  },
+  tabletLeftScroll: {
+    padding: 20,
+  },
+  tabletRightPane: {
+    flex: 7,
+    backgroundColor: '#FAFAFA',
+  },
+  tabletRightScroll: {
+    padding: 24,
+  },
+  rightPaneTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 16,
+  },
+  cardMarginTop: {
+    marginTop: 20,
   },
 });
 

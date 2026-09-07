@@ -14,7 +14,6 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
-  Dimensions,
   Animated,
   TouchableWithoutFeedback,
   Modal, // Import Modal
@@ -35,8 +34,7 @@ import {
   checkMintaBahanUnapprovedApi, // <-- BARU
 } from '../api/ApiService';
 import {useFocusEffect} from '@react-navigation/native';
-
-const {width} = Dimensions.get('window');
+import {useResponsive} from '../hooks/useResponsive';
 
 // --- Helper Format Rupiah (Copy dari ManagementDashboardScreen jika belum ada global helper) ---
 const formatRupiah = angka => {
@@ -221,28 +219,38 @@ const BouncyButton = ({onPress, children, style}) => {
 };
 
 // --- QUICK ACCESS ITEM (NEW) ---
-const QuickAccessItem = ({item}) => (
-  <BouncyButton style={styles.quickItemContainer} onPress={item.onPress}>
+const QuickAccessItem = ({item, isTablet}) => (
+  <BouncyButton
+    style={[
+      styles.quickItemContainer,
+      isTablet && styles.quickItemContainerTablet,
+    ]}
+    onPress={item.onPress}>
     <View
       style={[
         styles.quickIconBox,
+        isTablet && styles.quickIconBoxTablet,
         {backgroundColor: item.bgColor || '#E3F2FD'},
       ]}>
       <Icon
         name={item.iconName}
-        size={22}
+        size={isTablet ? 30 : 22}
         color={item.iconColor || '#1565C0'}
       />
     </View>
-    <Text style={styles.quickTitle} numberOfLines={2}>
+    <Text
+      style={[styles.quickTitle, isTablet && styles.quickTitleTablet]}
+      numberOfLines={2}>
       {item.title}
     </Text>
   </BouncyButton>
 );
 
 // --- MENU ITEM CARD (LIST STYLE) ---
-const MenuItem = ({item}) => (
-  <BouncyButton style={styles.menuItemContainer} onPress={item.onPress}>
+const MenuItem = ({item, isGrid}) => (
+  <BouncyButton
+    style={[styles.menuItemContainer, isGrid && styles.menuItemContainerGrid]}
+    onPress={item.onPress}>
     <View
       style={[styles.iconBox, {backgroundColor: item.bgColor || '#FFEBEE'}]}>
       <Icon
@@ -265,9 +273,10 @@ const MenuItem = ({item}) => (
 );
 
 const DashboardScreen = ({navigation}) => {
-  const {logout, userInfo, userToken} = useContext(AuthContext); // Ambil userToken
+  const {logout, userInfo, userToken} = useContext(AuthContext);
+  const {width, isTablet} = useResponsive();
 
-  // --- STATE OTORISASI ---
+  // --- STATE OTORISASI --- (tetap sama persis, tidak berubah)
   const [otorisasiVisible, setOtorisasiVisible] = useState(false);
   const [authList, setAuthList] = useState([]);
   const [loadingAuth, setLoadingAuth] = useState(false);
@@ -411,6 +420,8 @@ const DashboardScreen = ({navigation}) => {
     ),
     [expandedBranch, processingAuth, toggleBranch, handleProcessAuth],
   );
+
+  const usernameMaxWidthStyle = {maxWidth: width * (isTablet ? 0.5 : 0.7)};
 
   if (isSpecialUser) {
     return <ManagementDashboardScreen navigation={navigation} />;
@@ -770,6 +781,72 @@ const DashboardScreen = ({navigation}) => {
     return acc;
   }, {});
 
+  const leftPaneContent = (
+    <>
+      <View style={styles.headerContent}>
+        <View style={styles.flexShrink}>
+          <Text
+            style={[
+              styles.greetingLight,
+              isTablet && styles.greetingLightTablet,
+            ]}>
+            Halo,
+          </Text>
+          <Text
+            style={[
+              styles.usernameBig,
+              isTablet && styles.usernameBigTablet,
+              usernameMaxWidthStyle,
+            ]}
+            numberOfLines={1}>
+            {userInfo?.nama || 'User'}
+          </Text>
+          <View style={styles.branchBadge}>
+            <Icon name="map-pin" size={12} color="#fff" />
+            <Text style={styles.branchText}>
+              {userInfo?.cabang || 'Unknown'}
+            </Text>
+          </View>
+        </View>
+        <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
+          <Icon name="log-out" size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      {quickAccessMenus.length > 0 && (
+        <View
+          style={[
+            styles.quickAccessCard,
+            isTablet && styles.quickAccessCardTablet,
+          ]}>
+          <Text style={styles.quickAccessLabel}>Akses Cepat</Text>
+          <View
+            style={[
+              styles.quickAccessRow,
+              isTablet && styles.quickAccessRowTablet,
+            ]}>
+            {quickAccessMenus.map((item, index) => (
+              <QuickAccessItem key={index} item={item} isTablet={isTablet} />
+            ))}
+          </View>
+        </View>
+      )}
+    </>
+  );
+
+  const rightPaneContent = (
+    <>
+      {Object.keys(groupedMenus).map((group, index) => (
+        <View key={index} style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>{group}</Text>
+          {groupedMenus[group].map((menu, idx) => (
+            <MenuItem key={idx} item={menu} />
+          ))}
+        </View>
+      ))}
+    </>
+  );
+
   return (
     <View style={styles.container}>
       <StatusBar
@@ -778,62 +855,87 @@ const DashboardScreen = ({navigation}) => {
         barStyle="light-content"
       />
 
-      {/* 1. HEADER (Tinggi 280 agar muat Quick Access) */}
-      <View style={styles.headerWrapper}>
-        <LinearGradient
-          colors={['#1565C0', '#42A5F5']}
-          start={{x: 0, y: 0}}
-          end={{x: 1, y: 1}}
-          style={styles.gradientHeader}>
-          {/* User Info */}
-          <View style={styles.headerContent}>
-            <View>
-              <Text style={styles.greetingLight}>Halo,</Text>
-              <Text style={styles.usernameBig} numberOfLines={1}>
-                {userInfo?.nama || 'User'}
-              </Text>
-              <View style={styles.branchBadge}>
-                <Icon name="map-pin" size={12} color="#fff" />
-                <Text style={styles.branchText}>
-                  {userInfo?.cabang || 'Unknown'}
-                </Text>
+      {isTablet ? (
+        // ================= LAYOUT TABLET: KIRI-KANAN =================
+        <View style={styles.tabletRow}>
+          <LinearGradient
+            colors={['#C62828', '#EF5350']}
+            start={{x: 0, y: 0}}
+            end={{x: 1, y: 1}}
+            style={styles.tabletLeftPane}>
+            <ScrollView
+              contentContainerStyle={styles.tabletLeftScroll}
+              showsVerticalScrollIndicator={false}>
+              {leftPaneContent}
+            </ScrollView>
+          </LinearGradient>
+
+          <View style={styles.tabletRightPane}>
+            <ScrollView
+              contentContainerStyle={styles.tabletRightScroll}
+              showsVerticalScrollIndicator={false}>
+              {rightPaneContent}
+            </ScrollView>
+          </View>
+        </View>
+      ) : (
+        // ================= LAYOUT HP: ATAS-BAWAH (LAMA, TIDAK BERUBAH) =================
+        <>
+          <View style={styles.headerWrapper}>
+            <LinearGradient
+              colors={['#C62828', '#EF5350']}
+              start={{x: 0, y: 0}}
+              end={{x: 1, y: 1}}
+              style={styles.gradientHeader}>
+              <View style={styles.headerContent}>
+                <View>
+                  <Text style={styles.greetingLight}>Halo,</Text>
+                  <Text
+                    style={[styles.usernameBig, usernameMaxWidthStyle]}
+                    numberOfLines={1}>
+                    {userInfo?.nama || 'User'}
+                  </Text>
+                  <View style={styles.branchBadge}>
+                    <Icon name="map-pin" size={12} color="#fff" />
+                    <Text style={styles.branchText}>
+                      {userInfo?.cabang || 'Unknown'}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
+                  <Icon name="log-out" size={20} color="#fff" />
+                </TouchableOpacity>
               </View>
-            </View>
-            <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
-              <Icon name="log-out" size={20} color="#fff" />
-            </TouchableOpacity>
+            </LinearGradient>
           </View>
-        </LinearGradient>
-      </View>
 
-      <ScrollView
-        style={styles.contentContainer}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
-        {/* 2. FLOATING QUICK ACCESS (Kartu Putih di Atas) */}
-        {quickAccessMenus.length > 0 && (
-          <View style={styles.quickAccessCard}>
-            <Text style={styles.quickAccessLabel}>Akses Cepat</Text>
-            <View style={styles.quickAccessRow}>
-              {quickAccessMenus.map((item, index) => (
-                <QuickAccessItem key={index} item={item} />
-              ))}
-            </View>
-          </View>
-        )}
+          <ScrollView
+            style={styles.contentContainer}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}>
+            {quickAccessMenus.length > 0 && (
+              <View style={styles.quickAccessCard}>
+                <Text
+                  style={[
+                    styles.quickAccessLabel,
+                    isTablet && styles.quickAccessLabelTablet,
+                  ]}>
+                  Akses Cepat
+                </Text>
+                <View style={styles.quickAccessRow}>
+                  {quickAccessMenus.map((item, index) => (
+                    <QuickAccessItem key={index} item={item} isTablet={false} />
+                  ))}
+                </View>
+              </View>
+            )}
 
-        {/* 3. MENU LIST BIASA */}
-        {Object.keys(groupedMenus).map((group, index) => (
-          <View key={index} style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>{group}</Text>
-            {groupedMenus[group].map((menu, idx) => (
-              <MenuItem key={idx} item={menu} />
-            ))}
-          </View>
-        ))}
-      </ScrollView>
+            {rightPaneContent}
+          </ScrollView>
+        </>
+      )}
 
-      {/* --- MODAL OTORISASI (USER TOKO) --- */}
+      {/* --- MODAL OTORISASI, LostOrderWidget, FAB — TIDAK BERUBAH, TETAP DI LUAR CABANG --- */}
       <Modal
         visible={otorisasiVisible}
         transparent={true}
@@ -930,7 +1032,6 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.1)',
     textShadowOffset: {width: 0, height: 1},
     textShadowRadius: 2,
-    maxWidth: width * 0.7,
   },
   branchBadge: {
     flexDirection: 'row',
@@ -1310,6 +1411,82 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 11,
     fontWeight: 'bold',
+  },
+
+  menuGridRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  menuItemContainerGrid: {
+    width: '48.5%',
+  },
+
+  flexShrink: {
+    flexShrink: 1,
+  },
+
+  // --- LAYOUT TABLET KIRI-KANAN ---
+  tabletRow: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  tabletLeftPane: {
+    flex: 4,
+  },
+  tabletLeftScroll: {
+    flexGrow: 1,
+    paddingTop: 60,
+    paddingHorizontal: 32,
+    paddingBottom: 40,
+    justifyContent: 'center',
+  },
+  tabletRightPane: {
+    flex: 6,
+    backgroundColor: '#F5F7FA',
+  },
+  tabletRightScroll: {
+    paddingTop: 60,
+    paddingHorizontal: 24,
+    paddingBottom: 50,
+  },
+
+  // --- QUICK ACCESS TABLET ---
+  quickAccessCardTablet: {
+    backgroundColor: 'rgba(255,255,255,0.18)', // naik dari 0.15
+    marginTop: 32,
+    marginBottom: 0,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  quickAccessRowTablet: {
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    gap: 20,
+  },
+  quickItemContainerTablet: {
+    width: '30%',
+  },
+  quickIconBoxTablet: {
+    width: 68,
+    height: 68,
+    borderRadius: 20,
+  },
+  quickTitleTablet: {
+    fontSize: 13,
+    color: '#fff',
+  },
+
+  // --- TEKS HEADER TABLET (LEBIH BESAR) ---
+  greetingLightTablet: {
+    fontSize: 20,
+  },
+  usernameBigTablet: {
+    fontSize: 34,
+  },
+
+  quickAccessLabelTablet: {
+    color: 'rgba(255,255,255,0.9)',
   },
 });
 

@@ -11,7 +11,6 @@ import {
   StatusBar,
   Animated,
   TouchableWithoutFeedback,
-  Dimensions,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -29,9 +28,13 @@ import FileViewer from 'react-native-file-viewer';
 import Geolocation from 'react-native-geolocation-service';
 import {PermissionsAndroid} from 'react-native';
 import ReactNativeBiometrics from 'react-native-biometrics';
-import {enrollDeviceApi, requestChallengeApi} from '../api/ApiService'; // Pastikan path sesuai
-
-const {height} = Dimensions.get('window');
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  enrollDeviceApi,
+  requestChallengeApi,
+  enrollDeviceNoBioApi,
+} from '../api/ApiService';
+import {useResponsive} from '../hooks/useResponsive';
 
 const BouncyButton = ({onPress, disabled, isLoading, children, style}) => {
   const scaleValue = useRef(new Animated.Value(1)).current;
@@ -81,7 +84,8 @@ const BouncyButton = ({onPress, disabled, isLoading, children, style}) => {
 };
 
 const LoginScreen = () => {
-  const {login, loginDevice} = useContext(AuthContext);
+  const {height, isTablet} = useResponsive();
+  const {login, loginDevice, loginDeviceNoBio} = useContext(AuthContext);
   const [userKode, setUserKode] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -272,73 +276,149 @@ const LoginScreen = () => {
         const lat = position.coords.latitude;
         const lon = position.coords.longitude;
 
+        let biometricAvailable = false;
+        const rnBiometrics = new ReactNativeBiometrics();
+
         try {
           const bypassUsers = ['HARIS', 'SETYO'];
           if (bypassUsers.includes(userKode.toUpperCase())) {
-            // Tembak fungsi login standar (API /auth/login)
             await login(userKode, password, lat, lon);
-            return; // Hentikan eksekusi di sini agar tidak memanggil biometrik
+            return;
           }
 
-          const rnBiometrics = new ReactNativeBiometrics();
-          const {keysExist} = await rnBiometrics.biometricKeysExist();
+          const sensorResult = await rnBiometrics.isSensorAvailable();
+          biometricAvailable = sensorResult.available;
 
-          // Deteksi Info HP (Menggunakan Promise di versi terbaru DeviceInfo)
           const deviceId = await DeviceInfo.getUniqueId();
           const deviceName = await DeviceInfo.getDeviceName();
 
           // ==========================================
-          // SKENARIO A: PERANGKAT BELUM PUNYA KUNCI (ENROLLMENT)
+          // JALUR TABLET/DEVICE TANPA SENSOR BIOMETRIK
           // ==========================================
-          if (!keysExist) {
-            // Generate Key di dalam Hardware Keystore
-            const {publicKey} = await rnBiometrics.createKeys();
+          if (!biometricAvailable) {
+            console.log(
+              '[LOGIN-NOBIO] Sensor tidak tersedia, masuk jalur device secret',
+            );
 
-            // Tembak API Pendaftaran
-            await enrollDeviceApi(
-              userKode,
-              password,
+            let deviceSecret = await AsyncStorage.getItem('deviceSecret');
+            const isNewSecret = !deviceSecret;
+            console.log(
+              '[LOGIN-NOBIO] deviceSecret dari storage:',
+              deviceSecret,
+              '| isNewSecret:',
+              isNewSecret,
+            );
+            console.log(
+              '[LOGIN-NOBIO] deviceId:',
               deviceId,
-              publicKey,
+              '| deviceName:',
               deviceName,
             );
 
-            Toast.show({
-              type: 'success',
-              text1: 'Pendaftaran Berhasil',
-              text2: 'Perangkat sedang menunggu persetujuan Manager Pusat.',
-            });
-          }
-          // ==========================================
-          // SKENARIO B: PERANGKAT SUDAH PUNYA KUNCI (LOGIN)
-          // ==========================================
-          else {
-            // 1. Minta string acak (Challenge) dari Backend
-            const challengeRes = await requestChallengeApi(userKode, deviceId);
-            const challenge = challengeRes.data.challenge;
+            if (isNewSecret) {
+              const candidateSecret = `${deviceId}-${Date.now()}-${Math.random()
+                .toString(36)
+                .slice(2)}-${Math.random().toString(36).slice(2)}`;
+              console.log('[LOGIN-NOBIO] Mengirim enrollDeviceNoBioApi...', {
+                userKode,
+                deviceId,
+                candidateSecret,
+                deviceName,
+              });
 
-            // 2. Minta Kasir tempel Sidik Jari untuk menandatangani Challenge
-            const {success, signature} = await rnBiometrics.createSignature({
-              promptMessage: 'Verifikasi Keamanan Perangkat',
-              payload: challenge,
-            });
+              try {
+                const enrollRes = await enrollDeviceNoBioApi(
+                  userKode,
+                  password,
+                  deviceId,
+                  candidateSecret,
+                  deviceName,
+                );
+                console.log(
+                  '[LOGIN-NOBIO] enrollDeviceNoBioApi SUKSES:',
+                  enrollRes.data,
+                );
 
-            if (success) {
-              // 3. Tembak API Login dengan Signature & GPS (Sertakan password!)
-              await loginDevice(
+                await AsyncStorage.setItem('deviceSecret', candidateSecret);
+                console.log(
+                  '[LOGIN-NOBIO] deviceSecret berhasil disimpan ke AsyncStorage',
+                );
+
+                Toast.show({
+                  type: 'success',
+                  text1: 'Pendaftaran Berhasil',
+                  text2: 'Perangkat sedang menunggu persetujuan Manager Pusat.',
+                });
+              } catch (enrollError) {
+                console.log('[LOGIN-NOBIO] enrollDeviceNoBioApi GAGAL:', {
+                  message: enrollError.message,
+                  status: enrollError.response?.status,
+                  data: enrollError.response?.data,
+                });
+                throw enrollError; // lempar lagi supaya tetap ketangkap catch luar & tampil Toast error
+              }
+            } else {
+              console.log(
+                '[LOGIN-NOBIO] Mengirim loginDeviceNoBio (sudah punya secret)...',
+              );
+              await loginDeviceNoBio(
                 userKode,
                 password,
                 deviceId,
-                signature,
+                deviceSecret,
                 lat,
                 lon,
               );
-            } else {
+            }
+          }
+          // ==========================================
+          // JALUR DEVICE DENGAN SENSOR BIOMETRIK (kode lama, tidak berubah)
+          // ==========================================
+          else {
+            const {keysExist} = await rnBiometrics.biometricKeysExist();
+
+            if (!keysExist) {
+              const {publicKey} = await rnBiometrics.createKeys();
+              await enrollDeviceApi(
+                userKode,
+                password,
+                deviceId,
+                publicKey,
+                deviceName,
+              );
               Toast.show({
-                type: 'error',
-                text1: 'Batal',
-                text2: 'Verifikasi dibatalkan.',
+                type: 'success',
+                text1: 'Pendaftaran Berhasil',
+                text2: 'Perangkat sedang menunggu persetujuan Manager Pusat.',
               });
+            } else {
+              const challengeRes = await requestChallengeApi(
+                userKode,
+                deviceId,
+              );
+              const challenge = challengeRes.data.challenge;
+
+              const {success, signature} = await rnBiometrics.createSignature({
+                promptMessage: 'Verifikasi Keamanan Perangkat',
+                payload: challenge,
+              });
+
+              if (success) {
+                await loginDevice(
+                  userKode,
+                  password,
+                  deviceId,
+                  signature,
+                  lat,
+                  lon,
+                );
+              } else {
+                Toast.show({
+                  type: 'error',
+                  text1: 'Batal',
+                  text2: 'Verifikasi dibatalkan.',
+                });
+              }
             }
           }
         } catch (error) {
@@ -348,16 +428,16 @@ const LoginScreen = () => {
             error.message ||
             'Koneksi ke server gagal.';
 
-          // ==========================================
-          // PENANGANAN JIKA KUNCI HANGUS ATAU DIHAPUS DARI DATABASE
-          // ==========================================
           if (
             msg.includes('permanently invalidated') ||
-            msg.includes('belum terdaftar')
+            msg.includes('belum terdaftar') ||
+            msg.includes('perlu didaftarkan ulang')
           ) {
-            const rnBiometrics = new ReactNativeBiometrics();
-            // Hapus sisa kunci lama di HP agar bisa daftar ulang
-            await rnBiometrics.deleteKeys();
+            if (biometricAvailable) {
+              await rnBiometrics.deleteKeys();
+            } else {
+              await AsyncStorage.removeItem('deviceSecret');
+            }
 
             Toast.show({
               type: 'info',
@@ -366,7 +446,6 @@ const LoginScreen = () => {
                 'Sistem di-reset. Silakan tekan MASUK sekali lagi untuk mendaftar.',
             });
           } else {
-            // Error umum (password salah, gps jauh, dll)
             Toast.show({type: 'error', text1: 'Akses Ditolak', text2: msg});
           }
         } finally {
@@ -384,9 +463,125 @@ const LoginScreen = () => {
     );
   };
 
+  const headerContent = (
+    <Animated.View
+      style={[
+        styles.animatedHeader,
+        {
+          opacity: fadeAnim,
+          transform: [{translateY: slideAnim}],
+        },
+      ]}>
+      <Image source={require('../assets/logo.png')} style={styles.logo} />
+      <Text style={styles.headerTitle}>Kaosan Mobile</Text>
+      <Text style={styles.headerSubtitle}>
+        Sistem Manajemen Stok & Penjualan
+      </Text>
+    </Animated.View>
+  );
+
+  const formContent = (
+    <>
+      <Text style={styles.welcomeText}>Silakan Masuk</Text>
+
+      {/* Input User */}
+      <View
+        style={[
+          styles.inputWrapper,
+          (errorField === 'user' || errorField === 'all') && styles.inputError,
+        ]}>
+        <Icon
+          name="user"
+          size={20}
+          color={
+            errorField === 'user' || errorField === 'all'
+              ? '#D32F2F'
+              : '#78909C'
+          }
+          style={styles.iconMargin}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Kode User"
+          value={userKode}
+          onChangeText={text => {
+            setUserKode(text);
+            setErrorField('');
+          }}
+          autoCapitalize="none"
+          placeholderTextColor="#B0BEC5"
+        />
+      </View>
+
+      {/* Input Password */}
+      <View
+        style={[
+          styles.inputWrapper,
+          (errorField === 'pass' || errorField === 'all') && styles.inputError,
+        ]}>
+        <Icon
+          name="lock"
+          size={20}
+          color={
+            errorField === 'pass' || errorField === 'all'
+              ? '#D32F2F'
+              : '#78909C'
+          }
+          style={styles.iconMargin}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Password"
+          value={password}
+          onChangeText={text => {
+            setPassword(text);
+            setErrorField('');
+          }}
+          secureTextEntry={!isPasswordVisible}
+          placeholderTextColor="#B0BEC5"
+        />
+        <TouchableOpacity
+          onPress={() => setIsPasswordVisible(!isPasswordVisible)}
+          style={styles.iconButton}>
+          <Icon
+            name={isPasswordVisible ? 'eye-off' : 'eye'}
+            size={20}
+            color="#78909C"
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* Tombol Lupa Password */}
+      <TouchableOpacity
+        style={styles.forgotPassword}
+        onPress={() =>
+          Toast.show({
+            type: 'info',
+            text1: 'Info',
+            text2: 'Silakan hubungi IT/Admin untuk reset.',
+          })
+        }>
+        <Text style={styles.forgotPasswordText}>Lupa Password?</Text>
+      </TouchableOpacity>
+
+      <View style={styles.loginButtonWrapper}>
+        <BouncyButton
+          style={styles.button}
+          onPress={handleLogin}
+          isLoading={isLoading}
+          disabled={isLoading}>
+          <Text style={styles.buttonText}>MASUK</Text>
+        </BouncyButton>
+      </View>
+
+      <View style={styles.versionContainer}>
+        <Text style={styles.versionText}>Versi Aplikasi {appVersion}</Text>
+      </View>
+    </>
+  );
+
   return (
     <View style={styles.container}>
-      {/* 1. Immersive Status Bar (Transparan) */}
       <StatusBar
         translucent
         backgroundColor="transparent"
@@ -470,151 +665,53 @@ const LoginScreen = () => {
         </View>
       </Modal>
 
-      {/* 2. Keyboard Avoiding View (Agar form tidak tertutup keyboard) */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.flex1}>
-        <ScrollView
-          contentContainerStyle={styles.flexGrow1}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
-          {/* HEADER GRADIENT */}
-          <View
-            style={[
-              styles.headerContainer,
-              {
-                height: height * 0.35,
-              },
-            ]}>
+      {isTablet ? (
+        // ================= LAYOUT TABLET: KIRI-KANAN =================
+        <View style={styles.tabletRow}>
+          <View style={styles.tabletLeftPane}>
             <LinearGradient
-              colors={['#1565C0', '#42A5F5']}
+              colors={['#C62828', '#EF5350']}
               start={{x: 0, y: 0}}
               end={{x: 1, y: 1}}
-              style={styles.gradientHeader}>
-              <Animated.View
-                style={[
-                  styles.animatedHeader,
-                  {
-                    opacity: fadeAnim,
-                    transform: [{translateY: slideAnim}],
-                  },
-                ]}>
-                <Image
-                  source={require('../assets/logo.png')}
-                  style={styles.logo}
-                />
-                <Text style={styles.headerTitle}>Kaosan Mobile</Text>
-                <Text style={styles.headerSubtitle}>
-                  Sistem Manajemen Stok & Penjualan
-                </Text>
-              </Animated.View>
+              style={styles.tabletGradientPane}>
+              {headerContent}
             </LinearGradient>
           </View>
 
-          {/* FORM CONTAINER */}
-          <View style={styles.formContainer}>
-            <Text style={styles.welcomeText}>Silakan Masuk</Text>
-
-            {/* Input User */}
-            <View
-              style={[
-                styles.inputWrapper,
-                (errorField === 'user' || errorField === 'all') &&
-                  styles.inputError, // Cek Error
-              ]}>
-              <Icon
-                name="user"
-                size={20}
-                color={
-                  errorField === 'user' || errorField === 'all'
-                    ? '#D32F2F'
-                    : '#78909C'
-                }
-                style={styles.iconMargin}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Kode User"
-                value={userKode}
-                onChangeText={text => {
-                  setUserKode(text);
-                  setErrorField('');
-                }}
-                autoCapitalize="none"
-                placeholderTextColor="#B0BEC5"
-              />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.tabletRightPane}>
+            <ScrollView
+              contentContainerStyle={styles.tabletFormScroll}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}>
+              <View style={styles.tabletFormInner}>{formContent}</View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      ) : (
+        // ================= LAYOUT HP: ATAS-BAWAH (LAMA, TIDAK BERUBAH) =================
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.flex1}>
+          <ScrollView
+            contentContainerStyle={styles.flexGrow1}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}>
+            <View style={[styles.headerContainer, {height: height * 0.35}]}>
+              <LinearGradient
+                colors={['#C62828', '#EF5350']}
+                start={{x: 0, y: 0}}
+                end={{x: 1, y: 1}}
+                style={styles.gradientHeader}>
+                {headerContent}
+              </LinearGradient>
             </View>
 
-            {/* Input Password */}
-            <View
-              style={[
-                styles.inputWrapper,
-                (errorField === 'pass' || errorField === 'all') &&
-                  styles.inputError, // Cek Error
-              ]}>
-              <Icon
-                name="lock"
-                size={20}
-                color={
-                  errorField === 'pass' || errorField === 'all'
-                    ? '#D32F2F'
-                    : '#78909C'
-                }
-                style={styles.iconMargin}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                value={password}
-                onChangeText={text => {
-                  setPassword(text);
-                  setErrorField('');
-                }}
-                secureTextEntry={!isPasswordVisible}
-                placeholderTextColor="#B0BEC5"
-              />
-              <TouchableOpacity
-                onPress={() => setIsPasswordVisible(!isPasswordVisible)}
-                style={styles.iconButton}>
-                <Icon
-                  name={isPasswordVisible ? 'eye-off' : 'eye'}
-                  size={20}
-                  color="#78909C"
-                />
-              </TouchableOpacity>
-            </View>
-
-            {/* 3. Tombol Lupa Password */}
-            <TouchableOpacity
-              style={styles.forgotPassword}
-              onPress={() =>
-                Toast.show({
-                  type: 'info',
-                  text1: 'Info',
-                  text2: 'Silakan hubungi IT/Admin untuk reset.',
-                })
-              }>
-              <Text style={styles.forgotPasswordText}>Lupa Password?</Text>
-            </TouchableOpacity>
-
-            <View style={styles.loginButtonWrapper}>
-              <BouncyButton
-                style={styles.button}
-                onPress={handleLogin}
-                isLoading={isLoading}
-                disabled={isLoading}>
-                <Text style={styles.buttonText}>MASUK</Text>
-              </BouncyButton>
-            </View>
-
-            <View style={styles.versionContainer}>
-              <Text style={styles.versionText}>
-                Versi Aplikasi {appVersion}
-              </Text>
-            </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+            <View style={styles.formContainer}>{formContent}</View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      )}
     </View>
   );
 };
@@ -692,11 +789,11 @@ const styles = StyleSheet.create({
   },
   button: {
     height: 55,
-    backgroundColor: '#FF7043',
+    backgroundColor: '#B71C1C',
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 12,
-    shadowColor: '#FF7043',
+    shadowColor: '#B71C1C',
     shadowOffset: {width: 0, height: 4},
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -865,6 +962,38 @@ const styles = StyleSheet.create({
   versionText: {
     color: '#CFD8DC',
     fontSize: 12,
+  },
+
+  formInner: {
+    width: '100%',
+  },
+
+  tabletRow: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  tabletLeftPane: {
+    flex: 4,
+  },
+  tabletGradientPane: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  tabletRightPane: {
+    flex: 5,
+    backgroundColor: '#F5F7FA',
+  },
+  tabletFormScroll: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  tabletFormInner: {
+    paddingHorizontal: 48,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
   },
 });
 

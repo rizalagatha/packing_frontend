@@ -10,8 +10,10 @@ import {
 } from 'react-native';
 import * as DB from '../services/Database';
 import Icon from 'react-native-vector-icons/Feather';
+import {useResponsive} from '../hooks/useResponsive';
 
 const BazarCustomerListScreen = ({navigation}) => {
+  const {isTablet} = useResponsive();
   const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState([]);
 
@@ -46,7 +48,9 @@ const BazarCustomerListScreen = ({navigation}) => {
   );
 
   const renderItem = ({item}) => (
-    <TouchableOpacity style={styles.card} onPress={() => handleSelect(item)}>
+    <TouchableOpacity
+      style={[styles.card, isTablet && styles.cardGrid]}
+      onPress={() => handleSelect(item)}>
       <View style={styles.cardHeader}>
         <View style={styles.codeBadge}>
           <Text style={styles.codeText}>{item.cus_kode}</Text>
@@ -68,7 +72,7 @@ const BazarCustomerListScreen = ({navigation}) => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.searchHeader}>
-        <View style={styles.searchBar}>
+        <View style={[styles.searchBar, isTablet && styles.searchBarTablet]}>
           <Icon name="search" size={18} color="#999" />
           <TextInput
             style={styles.searchInput}
@@ -87,9 +91,15 @@ const BazarCustomerListScreen = ({navigation}) => {
 
       <FlatList
         data={customers}
-        keyExtractor={item => item.cus_kode}
+        keyExtractor={(item, index) => `${item.cus_kode}-${index}`}
+        key={isTablet ? 'grid3' : 'list'}
+        numColumns={isTablet ? 3 : 1}
+        columnWrapperStyle={isTablet ? styles.columnWrapper : undefined}
         renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          isTablet && styles.listContentTablet,
+        ]}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Icon name="users" size={50} color="#DDD" />
@@ -144,6 +154,25 @@ const styles = StyleSheet.create({
   emptyLabel: {marginTop: 10, color: '#999'},
   listContent: {
     padding: 15,
+  },
+  cardGrid: {
+    flex: 1,
+    marginHorizontal: 5,
+    maxWidth: '32%', // biar tidak melebar tak terkendali di grid 3 kolom
+  },
+  columnWrapper: {
+    paddingHorizontal: 9,
+  },
+  listContentTablet: {
+    maxWidth: 900,
+    alignSelf: 'center',
+    width: '100%',
+    paddingHorizontal: 6,
+  },
+  searchBarTablet: {
+    maxWidth: 900,
+    alignSelf: 'center',
+    width: '100%',
   },
 });
 

@@ -13,6 +13,7 @@ import {
   selectBranchApi,
   updateFcmTokenApi,
   loginWithDeviceApi,
+  loginWithDeviceNoBioApi,
 } from '../api/ApiService';
 import Toast from 'react-native-toast-message';
 import {AppState} from 'react-native';
@@ -195,6 +196,29 @@ export const AuthProvider = ({children}) => {
     [setTokenAndInfo, syncFcmToken],
   );
 
+  const loginDeviceNoBio = useCallback(
+    async (userKode, password, deviceId, deviceSecret, latitude, longitude) => {
+      const response = await loginWithDeviceNoBioApi(
+        userKode,
+        password,
+        deviceId,
+        deviceSecret,
+        latitude,
+        longitude,
+      );
+      if (response.data.multiBranch) {
+        setPreAuthToken(response.data.preAuthToken);
+        setBranches(response.data.branches);
+        setBranchSelectionRequired(true);
+      } else {
+        const {token, user} = response.data.data;
+        await setTokenAndInfo(token, user);
+        await syncFcmToken(token);
+      }
+    },
+    [setTokenAndInfo, syncFcmToken],
+  );
+
   const finalizeLogin = useCallback(
     async (branchCode, latitude, longitude) => {
       try {
@@ -312,6 +336,7 @@ export const AuthProvider = ({children}) => {
       value={{
         login,
         loginDevice,
+        loginDeviceNoBio,
         logout,
         isBranchSelectionRequired,
         branches,
